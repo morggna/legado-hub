@@ -83,7 +83,7 @@ def _set_private_response(response: Response) -> None:
 def entrypoint(request: Request, response: Response):
     """Return the network entrypoint serving the current request."""
     _set_private_response(response)
-    return {"entrypoint": str(getattr(request.app.state, "entrypoint", "combined"))}
+    return {"entrypoint": str(getattr(request.app.state, "entrypoint", "combined")), "authMode": str(getattr(request.app.state, "auth_mode", "account_invite"))}
 
 
 @_admin_router.post("/login")
@@ -93,7 +93,7 @@ def login(payload: AdminLoginRequest, request: Request, response: Response):
     _check_rate_limit(keys)
     try:
         user = auth_service.authenticate(username=username, password=payload.password)
-        if not user.is_admin:
+        if (str(getattr(request.app.state, "entrypoint", "combined")) == "admin" or getattr(request.app.state, "auth_mode", "account_invite") == "legacy") and not user.is_admin:
             raise HTTPException(status_code=401, detail="用户名或密码错误")
     except HTTPException as exc:
         if exc.status_code in {401, 403}:
@@ -197,7 +197,7 @@ def access_logout(request: Request, response: Response):
 
 @_admin_router.post("/change-password")
 def change_password(payload: ChangePasswordRequest, request: Request, response: Response):
-    user = auth_service.require_admin(request)
+    user = auth_service.require_user(request) if getattr(request.app.state, "auth_mode", "legacy") == "account_invite" else auth_service.require_admin(request)
     auth_service.change_password(
         user=user,
         current_password=payload.current_password,
@@ -240,3 +240,7 @@ public_router.include_router(_access_router)
 admin_router = APIRouter()
 admin_router.include_router(_common_router)
 admin_router.include_router(_admin_router)
+
+account_router = APIRouter()
+account_router.include_router(_common_router)
+account_router.include_router(_admin_router)

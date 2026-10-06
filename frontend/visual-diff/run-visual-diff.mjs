@@ -23,6 +23,10 @@ const viewports = [
 ]
 
 const pages = [
+  { id: "combined-login", title: "统一账号登录", currentPath: "/login", scenario: {role: "anonymous", entrypoint: "combined"} },
+  { id: "direct-search", title: "第三方直接阅读", currentPath: "/console/search", scenario: {role: "user", entrypoint: "combined"} },
+  { id: "direct-shelf", title: "个人书架", currentPath: "/console/library", scenario: {role: "user", entrypoint: "combined"} },
+  { id: "direct-reader", title: "按需章节阅读", currentPath: "/console/library/fixture-book", scenario: {role: "user", entrypoint: "combined"} },
   {
     id: "login",
     title: "登录页",
@@ -61,8 +65,8 @@ const pages = [
   {
     id: "subscriptions-results",
     title: "订阅搜索结果",
-    currentPath: "/console/subscription",
-    scenario: { role: "user" },
+    currentPath: "/console/admin/subscription",
+    scenario: { role: "admin" },
     prepare: async (page) => {
       await page.getByPlaceholder(/搜索你想看的小说或作者/).fill("深海")
       await page.keyboard.press("Enter")
@@ -84,7 +88,7 @@ const pages = [
   {
     id: "library",
     title: "管理员书库",
-    currentPath: "/console/library",
+    currentPath: "/console/admin/library",
     scenario: { role: "admin" },
   },
   {
@@ -96,8 +100,8 @@ const pages = [
   {
     id: "book-detail",
     title: "书籍详情",
-    currentPath: "/console/library/book-2",
-    scenario: { role: "user" },
+    currentPath: "/console/admin/library/book-2",
+    scenario: { role: "admin" },
     prepare: async (page) => {
       await assertMobileHorizontalScroll(page, "chapter-table-boundary")
     },
@@ -105,7 +109,7 @@ const pages = [
   {
     id: "book-detail-admin-logs",
     title: "管理员书籍详情日志",
-    currentPath: "/console/library/book-2",
+    currentPath: "/console/admin/library/book-2",
     scenario: { role: "admin" },
     preserveScroll: true,
     prepare: async (page) => {
@@ -126,7 +130,7 @@ const pages = [
   {
     id: "search-workbench",
     title: "搜索工作台",
-    currentPath: "/console/search",
+    currentPath: "/console/admin/search",
     scenario: { role: "admin" },
     prepare: async (page) => {
       await page.getByPlaceholder(/输入测试关键词/).fill("深海")
@@ -561,8 +565,16 @@ async function installMocks(page, scenario = {}) {
 }
 
 function mockApi(path, method, scenario = {}) {
+  if (path === "/api/direct/sources") return {items: [{id: "quanben5_com", name: "全本小说网", default: true}, {id: "hjwzw_com", name: "黄金屋", default: true}]}
+  if (path === "/api/direct/downloads" || path === "/api/accounts/invitations") return {items: []}
+  if (path === "/api/direct/shelf" && scenario.library === "empty") return {items: []}
+  if (path === "/api/direct/shelf") return {items: [{bookId: "fixture-book", sourceId: "fixture", sourceName: "全本小说网", name: "三国演义", author: "罗贯中"}]}
+  if (path.endsWith("/fixture-book/progress")) return {chapterIndex: 0, position: 0, revision: 0}
+  if (path.endsWith("/fixture-book/detail")) return {bookId: "fixture-book", sourceId: "fixture", sourceName: "全本小说网", name: "三国演义", author: "罗贯中"}
+  if (path.endsWith("/fixture-book/toc")) return {chapters: [{index: 0, title: "第一回 宴桃园豪杰三结义"}, {index: 1, title: "第二回"}]}
+  if (path.endsWith("/fixture-book/chapters/0")) return {title: "第一回 宴桃园豪杰三结义", content: ("滚滚长江东逝水，浪花淘尽英雄。是非成败转头空。\n青山依旧在，几度夕阳红。\n\n").repeat(12)}
   if (path === "/api/auth/entrypoint") {
-    return { entrypoint: scenario.entrypoint || (scenario.role === "admin" ? "admin" : "public") }
+    return { entrypoint: scenario.entrypoint || (scenario.role === "admin" ? "admin" : "public"), authMode: scenario.entrypoint === "combined" ? "account_invite" : "legacy" }
   }
   if (path === "/api/auth/me") {
     if (scenario.role === "anonymous") return { status: 401, body: { detail: "未登录" } }

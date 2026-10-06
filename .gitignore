@@ -79,3 +79,6 @@ dev-assets/tests/*
 !dev-assets/tests/test_fetcher_cookie_headers.py
 !dev-assets/tests/test_user_subscriptions.py
 !dev-assets/tests/test_manual_candidate_selection.py
+!dev-assets/tests/test_direct_reading.py
+!dev-assets/tests/test_account_invites.py
+!dev-assets/tests/test_book_downloads.py

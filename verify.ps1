@@ -3,6 +3,9 @@ Set-StrictMode -Version Latest
 
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Python = Join-Path $RepoRoot ".venv/Scripts/python.exe"
+if (-not (Test-Path -LiteralPath $Python)) {
+    $Python = Join-Path $RepoRoot ".venv/bin/python"
+}
 $FrontendRoot = Join-Path $RepoRoot "frontend"
 
 if (-not (Test-Path -LiteralPath $Python)) {
@@ -110,7 +113,7 @@ try {
         Invoke-Checked "Frontend lint" { & npm run lint }
         Invoke-Checked "Frontend tests" { & npx --no-install vitest run }
         Invoke-Checked "Frontend build" { & npm run build }
-        Invoke-Checked "Frontend visual compare" { & node .\visual-diff\run-visual-diff.mjs }
+        Invoke-Checked "Frontend visual compare" { & node (Join-Path $FrontendRoot "visual-diff/run-visual-diff.mjs") }
     }
     finally {
         Pop-Location

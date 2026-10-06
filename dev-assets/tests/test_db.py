@@ -21,6 +21,8 @@ def test_initialize_database(tmp_path: Path) -> None:
 
     expected = {
         "schema_meta",
+        "direct_bookshelf",
+        "direct_progress",
         "books",
         "chapters",
         "update_tasks",
@@ -56,7 +58,7 @@ def test_initialize_database(tmp_path: Path) -> None:
         version = conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'version'"
         ).fetchone()
-        assert version == ("14",)
+        assert version == ("16",)
 
         foreign_keys = conn.execute(
             "PRAGMA foreign_key_list(user_book_subscriptions)"
@@ -190,7 +192,7 @@ def test_v13_upgrade_preserves_users_and_invalidates_raw_sessions(tmp_path: Path
     with sqlite3.connect(db_path) as conn:
         assert conn.execute("SELECT username FROM users WHERE user_id = 'u1'").fetchone() == ("reader",)
         assert conn.execute("SELECT user_id FROM user_sessions WHERE session_id = 's1'").fetchone() is None
-        assert conn.execute("SELECT value FROM schema_meta WHERE key = 'version'").fetchone() == ("14",)
+        assert conn.execute("SELECT value FROM schema_meta WHERE key = 'version'").fetchone() == ("16",)
         assert conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'user_book_subscriptions'"
         ).fetchone() == (1,)
@@ -218,7 +220,7 @@ def test_v14_upgrade_backfills_raw_source_snapshot_content(tmp_path: Path) -> No
         ).fetchone() == ("legacy cleaned body",)
         assert conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'version'"
-        ).fetchone() == ("14",)
+        ).fetchone() == ("16",)
 
 
 def test_v10_upgrade_adds_subscription_search_jobs_without_touching_users(
@@ -245,7 +247,7 @@ def test_v10_upgrade_adds_subscription_search_jobs_without_touching_users(
         ).fetchone() == (1,)
         assert conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'version'"
-        ).fetchone() == ("14",)
+        ).fetchone() == ("16",)
 
 
 def test_v11_upgrade_backfills_shared_book_creator_from_create_log(tmp_path: Path) -> None:
@@ -280,7 +282,7 @@ def test_v11_upgrade_backfills_shared_book_creator_from_create_log(tmp_path: Pat
         assert creators == {"b1": "u1", "b2": "u2", "b3": ""}
         assert conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'version'"
-        ).fetchone() == ("14",)
+        ).fetchone() == ("16",)
 
 
 def test_subscription_constraints_and_cascade(tmp_path: Path) -> None:

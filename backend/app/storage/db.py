@@ -7,7 +7,7 @@ from pathlib import Path
 
 from app.config import DATA_DIR, DB_PATH
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 16
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -27,6 +27,45 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_username
     ON users (username);
+
+CREATE TABLE IF NOT EXISTS registration_invites (
+    invite_id TEXT PRIMARY KEY,
+    code_hash TEXT UNIQUE NOT NULL,
+    label TEXT NOT NULL,
+    max_uses INTEGER NOT NULL DEFAULT 1,
+    used_count INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER NOT NULL,
+    revoked INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS direct_download_jobs (
+    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    book_id TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'queued',
+    completed INTEGER NOT NULL DEFAULT 0,
+    total INTEGER NOT NULL DEFAULT 0,
+    error TEXT NOT NULL DEFAULT '',
+    updated_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY(user_id, book_id)
+);
+
+CREATE TABLE IF NOT EXISTS direct_bookshelf (
+    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    book_id TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    updated_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY(user_id, book_id)
+);
+CREATE TABLE IF NOT EXISTS direct_progress (
+    user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    book_id TEXT NOT NULL,
+    chapter_index INTEGER NOT NULL DEFAULT 0,
+    position REAL NOT NULL DEFAULT 0,
+    revision INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY(user_id, book_id)
+);
 
 CREATE TABLE IF NOT EXISTS user_sessions (
     session_id TEXT PRIMARY KEY,

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from enum import StrEnum
 
@@ -12,7 +13,8 @@ from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from app import config
-from app.api import health, legado, console, auth, subscribe
+from app.api import health, legado, console, auth, subscribe, direct, accounts
+from app.services.book_downloads import book_downloads
 from app.services.shared_book_scheduler import SharedBookScheduler
 from app.services.source_ping_scheduler import SourcePingScheduler
 from app.storage.db import initialize_database
@@ -113,6 +115,7 @@ async def lifespan(app: FastAPI):
     # On startup, probe any plugin that has a saved cookie in the host store.
     await _probe_saved_plugin_cookies(official_auth_manager)
 
+    await book_downloads.start()
     stop_event = asyncio.Event()
     shared_book_scheduler = SharedBookScheduler()
     aggregate_task = asyncio.create_task(shared_book_scheduler.run_forever(stop_event))
@@ -121,6 +124,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await book_downloads.stop()
         stop_event.set()
         aggregate_task.cancel()
         ping_task.cancel()
@@ -156,6 +160,7 @@ def create_app(
     *,
     entrypoint: EntryPoint | str = EntryPoint.COMBINED,
     manage_runtime: bool = True,
+    auth_mode: str | None = None,
 ) -> FastAPI:
     entrypoint = EntryPoint(entrypoint)
     security = security_config or load_public_security_config()
@@ -169,6 +174,7 @@ def create_app(
         openapi_url=None if public_entrypoint else "/openapi.json",
     )
     app.state.entrypoint = entrypoint.value
+    app.state.auth_mode = auth_mode or (os.getenv("LEGADOHUB_AUTH_MODE", "account_invite") if entrypoint is EntryPoint.COMBINED else "legacy")
     install_public_security(app, security)
 
     @app.exception_handler(ReadingLimitError)
@@ -188,6 +194,7 @@ def create_app(
     if entrypoint is EntryPoint.PUBLIC:
         app.include_router(health.public_router)
         app.include_router(auth.public_router)
+        app.include_router(direct.router)
         app.include_router(subscribe.public_router)
         app.include_router(legado.router)
     elif entrypoint is EntryPoint.ADMIN:
@@ -220,7 +227,12 @@ def create_app(
     else:
         app.include_router(health.router)
         app.include_router(legado.router)
-        app.include_router(auth.router)
+        if app.state.auth_mode == "account_invite":
+            app.include_router(auth.account_router)
+            app.include_router(accounts.router)
+        else:
+            app.include_router(auth.router)
+        app.include_router(direct.router)
         app.include_router(subscribe.router)
         app.include_router(console.console_router)
 
@@ -258,6 +270,12 @@ def create_app(
             return _spa_index_response()
 
         if entrypoint is EntryPoint.PUBLIC:
+            @app.get("/console/direct")
+            @app.get("/console/direct/shelf")
+            @app.get("/console/direct/book/{book_id}")
+            async def direct_spa(book_id: str = ""):
+                return _spa_index_response()
+
             @app.get("/console/subscription")
             async def console_subscription_spa():
                 return _spa_index_response()

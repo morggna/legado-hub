@@ -5,6 +5,7 @@ import type { AuthUser, ConsoleEntrypoint } from "@/lib/auth.types"
 
 interface AuthContextValue {
   user: AuthUser | null
+  authMode: "account_invite" | "legacy"
   entrypoint: ConsoleEntrypoint
   isLoading: boolean
   isAuthenticated: boolean
@@ -87,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextValue = {
     user: user?.user || null,
     entrypoint,
+    authMode: entrypointData?.authMode === "legacy" ? "legacy" : "account_invite",
     isLoading: isLoading || isEntrypointLoading,
     isAuthenticated: !!user?.user,
     authError,

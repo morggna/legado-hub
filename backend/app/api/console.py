@@ -3654,7 +3654,7 @@ def create_user(request: Request, payload: dict):
     _reject_unknown_fields(payload, {"username", "password", "role"}, label="创建用户")
     role = str(payload.get("role", "user"))
     username = str(payload.get("username", "")).strip()
-    if role == "user":
+    if role == "user" and getattr(request.app.state, "auth_mode", "legacy") != "account_invite":
         if str(payload.get("password", "")):
             raise HTTPException(status_code=422, detail="普通用户由系统生成授权码，不能提交密码")
         result = auth_service.create_access_user(
@@ -3680,7 +3680,7 @@ def reset_user_password(request: Request, user_id: str, payload: dict):
     admin = auth_service.require_admin(request)
     _reject_unknown_fields(payload, {"password"}, label="重置密码")
     target = auth_service.get_user(user_id)
-    if target and not target.is_admin:
+    if target and not target.is_admin and getattr(request.app.state, "auth_mode", "legacy") != "account_invite":
         raise HTTPException(status_code=400, detail="普通用户必须重置授权码")
     if target and target.user_id == admin.user_id:
         raise HTTPException(status_code=409, detail="当前账户请在账户安全中修改密码")
@@ -3695,6 +3695,8 @@ def reset_user_password(request: Request, user_id: str, payload: dict):
 @console_route("post", "/users/{user_id}/reset-access-code")
 def reset_user_access_code(request: Request, user_id: str, payload: dict | None = None):
     admin = auth_service.require_admin(request)
+    if getattr(request.app.state, "auth_mode", "legacy") == "account_invite":
+        raise HTTPException(status_code=410, detail="授权码模式已取消，请使用账号密码和注册邀请码")
     _reject_unknown_fields(payload or {}, set(), label="重置授权码")
     result = auth_service.reset_access_code(
         user_id,
@@ -3711,6 +3713,8 @@ def reset_user_access_code(request: Request, user_id: str, payload: dict | None 
 def get_user_access_links(request: Request, user_id: str):
     """Re-show a reading user's current source/subscription links."""
     admin = auth_service.require_admin(request)
+    if getattr(request.app.state, "auth_mode", "legacy") == "account_invite":
+        raise HTTPException(status_code=410, detail="授权码模式已取消，请使用账号密码和注册邀请码")
     code = auth_service.access_code_for_user(
         user_id,
         actor_user_id=admin.user_id,

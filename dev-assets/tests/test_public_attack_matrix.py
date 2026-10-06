@@ -103,6 +103,9 @@ def test_reading_rate_and_concurrency_limits_are_bounded() -> None:
 
 
 def test_injection_and_amplification_inputs_are_rejected_before_work(monkeypatch) -> None:
+    # Exercise real local SQLite/search validation without starting live site
+    # searches. This bounded attack test must not depend on external fetchers.
+    monkeypatch.setattr("app.api.subscribe._third_party_search_source_ids", lambda _service: [])
     token, _ = _bearer_identity()
     client = TestClient(app)
     headers = {"Authorization": f"Bearer {token}"}

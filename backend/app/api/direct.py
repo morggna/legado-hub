@@ -1,0 +1,148 @@
+"""One authenticated browser entrypoint for anonymous third-party source reading."""
+import json
+from collections import Counter
+
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse, FileResponse
+from app.services.book_downloads import book_downloads
+from starlette.background import BackgroundTask
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.services.user_auth import auth_service
+from app.services.direct_reading import direct_reading
+from app.storage.direct_reading import direct_repository
+
+router = APIRouter(prefix="/api/direct")
+_active_searches = Counter()
+
+
+class ProgressRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    chapterIndex: int = Field(ge=0, le=1000000)
+    position: float = Field(ge=0, le=1, allow_inf_nan=False)
+    revision: int = Field(ge=0)
+
+
+@router.get("/sources")
+def sources(request: Request):
+    auth_service.require_user(request)
+    return {"items": direct_reading.sources()}
+
+
+@router.get("/search")
+async def search(request: Request, keyword: str = Query(min_length=1, max_length=100), sources: str = Query(max_length=3000), page: int = Query(default=1, ge=1, le=100)):
+    user = auth_service.require_user(request)
+    if not keyword.strip():
+        raise HTTPException(400, "请输入书名或作者")
+    source_ids = list(dict.fromkeys(filter(None, sources.split(","))))
+    if not source_ids or len(source_ids) > 64:
+        raise HTTPException(400, "请选择 1 至 64 个书源")
+    for source_id in source_ids:
+        direct_reading.plugin(source_id)
+    if _active_searches[user.user_id] >= 2:
+        raise HTTPException(429, "请先停止已有搜索")
+    _active_searches[user.user_id] += 1
+    released = False
+    def release():
+        nonlocal released
+        if not released:
+            released = True
+            _active_searches[user.user_id] -= 1
+            if not _active_searches[user.user_id]:
+                del _active_searches[user.user_id]
+    async def stream():
+        try:
+            async for result in direct_reading.search(keyword.strip(), source_ids, page):
+                yield "data: " + json.dumps(result, ensure_ascii=False) + "\n\n"
+            yield 'event: done\ndata: {}\n\n'
+        finally:
+            release()
+    return StreamingResponse(stream(), media_type="text/event-stream", background=BackgroundTask(release), headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+
+@router.get("/books/{book_id}/detail")
+async def detail(book_id: str, request: Request):
+    user = auth_service.require_user(request)
+    return book_downloads.cached(user.user_id, book_id, "detail.json") or await direct_reading.detail(book_id)
+
+
+@router.get("/books/{book_id}/toc")
+async def toc(book_id: str, request: Request):
+    user = auth_service.require_user(request)
+    result = book_downloads.cached(user.user_id, book_id, "toc.json") or await direct_reading.toc(book_id)
+    return {"bookId": book_id, "chapters": [{"index": c["index"], "title": c["title"]} for c in result["chapters"]]}
+
+
+@router.get("/books/{book_id}/chapters/{index}")
+async def chapter(book_id: str, index: int, request: Request):
+    user = auth_service.require_user(request)
+    result = book_downloads.cached(user.user_id, book_id, f"chapter-{index}.json")
+    if result:
+        return {k: v for k, v in result.items() if k != "url"}
+    snapshot = book_downloads.cached(user.user_id, book_id, "toc.json")
+    if snapshot:
+        if not 0 <= index < len(snapshot["chapters"]):
+            raise HTTPException(404, "章节不存在")
+        return await direct_reading.chapter_at(book_id, snapshot["chapters"][index])
+    return await direct_reading.chapter(book_id, index)
+
+
+@router.get("/shelf")
+def shelf(request: Request):
+    user = auth_service.require_user(request)
+    return {"items": direct_repository.shelf(user.user_id)}
+
+
+@router.put("/shelf/{book_id}")
+async def save(book_id: str, request: Request):
+    user = auth_service.require_user(request)
+    return direct_repository.save(user.user_id, await direct_reading.detail(book_id))
+
+
+@router.delete("/shelf/{book_id}")
+async def remove(book_id: str, request: Request):
+    user = auth_service.require_user(request)
+    book_downloads.remove(user.user_id, book_id)
+    return {"ok": True}
+
+
+@router.get("/books/{book_id}/progress")
+def progress(book_id: str, request: Request):
+    user = auth_service.require_user(request)
+    direct_reading.book_target(book_id)
+    return direct_repository.progress(user.user_id, book_id)
+
+
+@router.put("/books/{book_id}/progress")
+async def update_progress(book_id: str, payload: ProgressRequest, request: Request):
+    user = auth_service.require_user(request)
+    toc = book_downloads.cached(user.user_id, book_id, "toc.json") or await direct_reading.toc(book_id)
+    if payload.chapterIndex >= len(toc["chapters"]):
+        raise HTTPException(400, "章节超出目录范围")
+    return direct_repository.update_progress(user.user_id, book_id, payload.chapterIndex, payload.position, payload.revision)
+
+
+@router.get("/downloads")
+def downloads(request: Request):
+    user = auth_service.require_user(request)
+    return {"items": direct_repository.downloads(user.user_id)}
+
+
+@router.post("/books/{book_id}/download")
+async def start_download(book_id: str, request: Request):
+    user = auth_service.require_user(request)
+    return book_downloads.enqueue(user.user_id, book_id)
+
+
+@router.delete("/books/{book_id}/download")
+async def pause_download(book_id: str, request: Request):
+    user = auth_service.require_user(request)
+    return await book_downloads.cancel(user.user_id, book_id)
+
+
+@router.get("/books/{book_id}/download/file")
+def download_file(book_id: str, request: Request):
+    user = auth_service.require_user(request)
+    path = book_downloads.file(user.user_id, book_id)
+    book = direct_repository.get(user.user_id, book_id)
+    return FileResponse(path, media_type="text/plain; charset=utf-8", filename=book["name"][:100] + ".txt")

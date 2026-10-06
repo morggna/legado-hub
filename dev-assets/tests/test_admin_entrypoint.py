@@ -88,7 +88,7 @@ def test_public_listener_exposes_only_reader_and_user_routes(isolated_apps) -> N
     public_app, _ = isolated_apps
     client = TestClient(public_app, base_url=PUBLIC_ORIGIN)
 
-    assert client.get("/api/auth/entrypoint").json() == {"entrypoint": "public"}
+    assert client.get("/api/auth/entrypoint").json() == {"entrypoint": "public", "authMode": "legacy"}
     assert client.get("/health").status_code == 200
     assert client.get("/api/subscribe/legado/source").status_code == 401
 
@@ -165,7 +165,7 @@ def test_admin_listener_exposes_management_but_not_access_code_redemption(isolat
     _, admin_app = isolated_apps
     client = TestClient(admin_app, base_url=ADMIN_ORIGIN)
 
-    assert client.get("/api/auth/entrypoint").json() == {"entrypoint": "admin"}
+    assert client.get("/api/auth/entrypoint").json() == {"entrypoint": "admin", "authMode": "legacy"}
     assert client.post(
         "/api/auth/access/redeem",
         json={"accessCode": "LH1.invalid.invalid"},
@@ -289,8 +289,8 @@ def test_uvicorn_dispatches_two_real_listening_sockets(isolated_apps) -> None:
             headers={"Host": "admin.test"},
             trust_env=False,
         )
-        assert public_response.json() == {"entrypoint": "public"}
-        assert admin_response.json() == {"entrypoint": "admin"}
+        assert public_response.json() == {"entrypoint": "public", "authMode": "legacy"}
+        assert admin_response.json() == {"entrypoint": "admin", "authMode": "legacy"}
         public_admin_response = httpx.get(
             f"http://127.0.0.1:{public_port}/api/console/status",
             headers={"Host": "public.test"},

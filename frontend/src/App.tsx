@@ -5,6 +5,9 @@ import { AuthProvider, useAuth } from "@/lib/auth"
 import { Layout } from "@/components/layout/Layout"
 import { LoginPage } from "@/routes/LoginPage"
 import { Dashboard } from "@/routes/Dashboard"
+import { DirectSearchPage } from "@/routes/DirectSearchPage"
+import { DirectShelfPage } from "@/routes/DirectShelfPage"
+import { DirectReaderPage } from "@/routes/DirectReaderPage"
 import { Plugins } from "@/routes/Plugins"
 import { SearchJobs } from "@/routes/SearchJobs"
 import { SettingsPage } from "@/routes/SettingsPage"
@@ -12,7 +15,7 @@ import { SubscriptionDiscoveryPage } from "@/routes/SubscriptionDiscoveryPage"
 import { LibraryPage } from "@/routes/LibraryPage"
 import { LibraryBookDetailPage } from "@/routes/LibraryBookDetailPage"
 import { LibraryChapterDetailPage } from "@/routes/LibraryChapterDetailPage"
-import { UsersPage } from "@/routes/UsersPage"
+import { AccountUsersPage as UsersPage } from "@/routes/AccountUsersPage"
 
 function ProtectedLayout() {
   const location = useLocation()
@@ -65,6 +68,11 @@ export function AdminOnly() {
   return <Outlet />
 }
 
+function HomePage() {
+  const { entrypoint } = useAuth()
+  return entrypoint === "combined" ? <Navigate to="/console/library" replace /> : <Dashboard />
+}
+
 function AuthRouter() {
   return (
     <BrowserRouter>
@@ -72,22 +80,25 @@ function AuthRouter() {
         <Route path="/login" element={<LoginPage />} />
         <Route element={<ProtectedLayout />}>
           <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
+            <Route index element={<HomePage />} />
           </Route>
+          <Route path="/console/library/:bookId" element={<DirectReaderPage />} />
           <Route path="/console" element={<Layout />}>
             <Route index element={<Navigate to="/" replace />} />
-            <Route path="subscription" element={<SubscriptionDiscoveryPage />} />
-            <Route path="library" element={<LibraryPage />} />
-            <Route path="library/:bookId" element={<LibraryBookDetailPage />} />
+            <Route path="search" element={<DirectSearchPage />} />
+            <Route path="direct" element={<Navigate to="/console/search" replace />} />
+            <Route path="direct/shelf" element={<Navigate to="/console/library" replace />} />
+            <Route path="library" element={<DirectShelfPage />} />
             <Route element={<AdminOnly />}>
               <Route path="plugins" element={<Plugins />} />
-              <Route path="search" element={<SearchJobs />} />
+              <Route path="admin/search" element={<SearchJobs />} />
               <Route path="official-sources" element={<Navigate to="/console/plugins?tab=official" replace />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="users" element={<UsersPage />} />
               <Route path="library/:bookId/chapters/:chapterId" element={<LibraryChapterDetailPage />} />
               <Route path="admin/subscription" element={<SubscriptionDiscoveryPage mode="admin" />} />
               <Route path="admin/library" element={<LibraryPage />} />
+              <Route path="admin/library/:bookId" element={<LibraryBookDetailPage />} />
             </Route>
           </Route>
         </Route>

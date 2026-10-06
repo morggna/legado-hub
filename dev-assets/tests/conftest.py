@@ -5,11 +5,16 @@ present in this checkout. They are excluded from the default test run so the
 suite remains green for the code that is maintained here.
 """
 
+import os
 import shutil
 import tempfile
 from pathlib import Path
 
 import pytest
+
+# Upstream tests exercise the preserved legacy public/Legado integration.
+# New account/invite tests explicitly select the production account surface.
+os.environ["LEGADOHUB_AUTH_MODE"] = "legacy"
 
 _TEST_RUNTIME_ROOT = Path(tempfile.mkdtemp(prefix="legado-hub-pytest-"))
 

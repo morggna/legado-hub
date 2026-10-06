@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useLocation } from "react-router"
 import {
-  AlertCircle, LayoutDashboard, LogOut, Menu, Search, Settings, BookOpen, UserCog, Users, Library, ShieldAlert, Server,
+  AlertCircle, LogOut, Menu, Search, Settings, BookOpen, UserCog, Users, Library, ShieldAlert, Server,
 } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
@@ -22,13 +22,12 @@ interface NavItem {
 }
 
 const mainNav: NavItem[] = [
-  { name: "仪表盘", href: "/", icon: LayoutDashboard },
-  { name: "订阅", href: "/console/subscription", icon: Search, aliases: ["/console/admin/subscription"] },
-  { name: "书库", href: "/console/library", icon: Library, aliases: ["/console/admin/library"] },
+  { name: "我的书库", href: "/console/library", icon: Library },
+  { name: "搜索书源", href: "/console/search", icon: Search },
 ]
 
 const adminNav: NavItem[] = [
-  { name: "搜索工作台", href: "/console/search", icon: ShieldAlert, adminOnly: true },
+  { name: "搜索工作台", href: "/console/admin/search", icon: ShieldAlert, adminOnly: true },
   { name: "书源管理", href: "/console/plugins", icon: Server, adminOnly: true },
   { name: "用户管理", href: "/console/users", icon: Users, adminOnly: true },
   { name: "系统设置", href: "/console/settings", icon: Settings, adminOnly: true },
@@ -90,7 +89,7 @@ export function Layout() {
         </div>
         <div className="flex flex-1 flex-col overflow-y-auto px-4 py-4">
           <nav className="flex-1 space-y-1">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400 px-3">订阅管理</div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400 px-3">阅读空间</div>
             {mainNav.map((item) => renderNavItem(item))}
             {isAdmin && (
               <>

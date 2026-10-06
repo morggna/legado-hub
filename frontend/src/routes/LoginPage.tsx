@@ -1,188 +1,59 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router"
-import { BookOpen, KeyRound, Loader2, ShieldCheck } from "lucide-react"
+import { useQueryClient } from "@tanstack/react-query"
+import { BookOpen } from "lucide-react"
+import { useAuth } from "@/lib/auth"
+import { accountRequest } from "@/lib/account-api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { apiErrorMessage } from "@/lib/api"
-import { useAuth } from "@/lib/auth"
-
-function safeNextPath(raw: string | null): string {
-  const value = (raw || "").trim()
-  if (!value.startsWith("/") || value.startsWith("//")) return "/"
-  return value
-}
+import { LegacyLoginPage } from "./LegacyLoginPage"
 
 export function LoginPage() {
+  const auth = useAuth()
+  // Dedicated upstream entrypoints are retained only for compatibility tests;
+  // the deployed combined app always uses account_invite.
+  if (auth.authMode === "legacy" || (!auth.authMode && auth.entrypoint !== "combined")) return <LegacyLoginPage />
+  return <AccountLoginPage />
+}
+
+function AccountLoginPage() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const { user, entrypoint, isLoading, authError, retryAuth, login, loginWithAccessCode } = useAuth()
-  const [mode, setMode] = useState<"access" | "admin">("access")
-  const [accessCode, setAccessCode] = useState("")
-  const [username, setUsername] = useState("admin")
+  const client = useQueryClient()
+  const [params] = useSearchParams()
+  const { user, isLoading, login } = useAuth()
+  const [register, setRegister] = useState(false)
+  const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
-  const [error, setError] = useState<string | null>(() =>
-    searchParams.get("error") === "invalid_code"
-      ? "订阅链接无效或已重置，请联系管理员重新发放。"
-      : null,
-  )
-  const [submitting, setSubmitting] = useState(false)
-  const [autoRedeeming, setAutoRedeeming] = useState(false)
-  const attemptedAutoCodeRef = useRef<string>("")
-  const effectiveEntrypoint = entrypoint || "combined"
-  const effectiveMode = effectiveEntrypoint === "admin" ? "admin" : effectiveEntrypoint === "public" ? "access" : mode
-  const nextPath = safeNextPath(searchParams.get("next"))
-
-  useEffect(() => {
-    if (!isLoading && user) {
-      navigate(nextPath, { replace: true })
-    }
-  }, [isLoading, navigate, nextPath, user])
-
-  // Personal subscription link / book-source open: ?code= auto-login (once per code).
-  useEffect(() => {
-    if (isLoading || user || effectiveMode === "admin" || autoRedeeming) return
-    const code = (searchParams.get("code") || "").trim()
-    if (!code) return
-    if (attemptedAutoCodeRef.current === code) return
-    attemptedAutoCodeRef.current = code
-    let cancelled = false
-    setAutoRedeeming(true)
-    setError(null)
-    void (async () => {
-      try {
-        await loginWithAccessCode(code)
-        if (!cancelled) navigate(nextPath, { replace: true })
-      } catch (loginError) {
-        if (!cancelled) {
-          setAccessCode(code)
-          setError(apiErrorMessage(loginError, "订阅链接登录失败，请检查链接是否已重置。"))
-        }
-      } finally {
-        if (!cancelled) setAutoRedeeming(false)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [autoRedeeming, effectiveMode, isLoading, loginWithAccessCode, navigate, nextPath, searchParams, user])
-
-  if (isLoading || autoRedeeming) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        {autoRedeeming && <p className="text-sm text-slate-500">正在通过订阅链接登录…</p>}
-      </div>
-    )
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    if (effectiveMode === "access" && !accessCode.trim()) {
-      setError("请输入授权码")
-      return
-    }
-    if (effectiveMode === "admin" && (!username.trim() || !password)) {
-      setError("请输入管理员用户名和密码")
-      return
-    }
-    setSubmitting(true)
+  const [invitationCode, setInvitationCode] = useState("")
+  const [error, setError] = useState("")
+  const [busy, setBusy] = useState(false)
+  const rawNext = params.get("next") || "/console/library"
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/console/library"
+  useEffect(() => { if (!isLoading && user) navigate(next, { replace: true }) }, [isLoading, user, next, navigate])
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true); setError("")
     try {
-      if (effectiveMode === "access") {
-        await loginWithAccessCode(accessCode.trim())
-        setAccessCode("")
-      } else {
-        await login(username.trim(), password)
-        setPassword("")
-      }
-      navigate(nextPath, { replace: true })
-    } catch (loginError) {
-      setError(apiErrorMessage(loginError, "登录失败，请稍后重试。"))
-    } finally {
-      setSubmitting(false)
-    }
+      if (register) {
+        await accountRequest("/auth/register", { method: "POST", body: JSON.stringify({ username: username.trim(), password, invitationCode: invitationCode.trim() }) })
+        await client.invalidateQueries({ queryKey: ["auth", "me"] })
+      } else await login(username.trim(), password)
+      setPassword(""); navigate(next, { replace: true })
+    } catch (e) { setError(e instanceof Error ? e.message : "登录失败") }
+    finally { setBusy(false) }
   }
-
-  const loginForm = (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {effectiveMode === "access" ? (
-        <div className="space-y-2">
-          <Label htmlFor="access-code">授权码 / 订阅链接</Label>
-          <Input
-            id="access-code"
-            type="password"
-            value={accessCode}
-            onChange={(e) => setAccessCode(e.target.value)}
-            autoComplete="current-password"
-            autoFocus
-            placeholder="粘贴授权码，或通过专属链接自动登录"
-          />
-          <p className="text-xs text-slate-500">管理员可发放「专属书源/订阅链接」，打开后无需再手动输入。</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="username">用户名</Label>
-            <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoFocus />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">密码</Label>
-            <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
-          </div>
-        </div>
-      )}
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      {authError && (
-        <Alert variant="destructive">
-          <AlertDescription className="flex items-center justify-between gap-2">
-            <span>{authError}</span>
-            <Button type="button" variant="outline" size="sm" onClick={() => { void retryAuth() }}>重试</Button>
-          </AlertDescription>
-        </Alert>
-      )}
-      <Button
-        type="submit"
-        className="w-full"
-        disabled={submitting}
-      >
-        {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        登录
-      </Button>
-    </form>
-  )
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
-      <Card className="w-full max-w-md shadow-sm">
-        <CardHeader className="space-y-1">
-          <div className="flex items-center gap-2 text-slate-900">
-            <BookOpen className="h-5 w-5" />
-            <CardTitle className="text-xl">LegadoHub</CardTitle>
-          </div>
-          <CardDescription>
-            {effectiveMode === "access" ? "读者登录：授权码或专属订阅链接" : "管理员登录"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {effectiveEntrypoint === "combined" && (
-            <Tabs value={effectiveMode} onValueChange={(v) => setMode(v as "access" | "admin")}>
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="access"><KeyRound className="mr-1.5 h-3.5 w-3.5" />授权码</TabsTrigger>
-                <TabsTrigger value="admin"><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />管理员</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          )}
-          {loginForm}
-        </CardContent>
-      </Card>
+  return <div className="flex min-h-dvh items-center justify-center bg-slate-50 p-4">
+    <div className="w-full max-w-md rounded-xl border bg-white p-7 shadow-sm">
+      <h1 className="flex items-center gap-2 text-xl font-semibold"><BookOpen /> LegadoHub</h1>
+      <p className="mb-6 mt-2 text-sm text-slate-500">{register ? "使用管理员提供的邀请码创建账号" : "登录后搜索书源，管理书库与阅读进度"}</p>
+      <form className="space-y-4" onSubmit={e => { void submit(e) }}>
+        <div className="space-y-2"><Label htmlFor="username">用户名</Label><Input id="username" autoComplete="username" autoFocus required value={username} onChange={e => setUsername(e.target.value)} maxLength={64} /></div>
+        <div className="space-y-2"><Label htmlFor="password">密码</Label><Input id="password" type="password" autoComplete={register ? "new-password" : "current-password"} required minLength={register ? 8 : undefined} maxLength={128} value={password} onChange={e => setPassword(e.target.value)} /></div>
+        {register && <div className="space-y-2"><Label htmlFor="invitation">邀请码</Label><Input id="invitation" required value={invitationCode} onChange={e => setInvitationCode(e.target.value)} autoComplete="off" /></div>}
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+        <Button type="submit" className="w-full" disabled={busy}>{busy ? "处理中…" : register ? "注册账号" : "登录"}</Button>
+      </form>
+      <Button className="mt-4 w-full" variant="ghost" disabled={busy} onClick={() => { setRegister(!register); setError("") }}>{register ? "已有账号，返回登录" : "有邀请码？注册账号"}</Button>
     </div>
-  )
+  </div>
 }

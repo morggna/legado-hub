@@ -23,6 +23,14 @@ from app.source_plugins.id_codec import encode_chapter_id
 from app.storage.db import initialize_database
 
 
+@pytest.fixture(autouse=True)
+def isolate_source_discovery_network(monkeypatch):
+    # Storage/bootstrap fixtures use synthetic books and catalogs. Do not search
+    # live installed sources for these names. Discovery-specific cases below
+    # supply their own scheduler/processor doubles and still exercise discovery.
+    monkeypatch.setattr("app.source_plugins.scheduler.PluginScheduler._enabled_plugins", lambda self: [])
+
+
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 
