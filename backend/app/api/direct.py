@@ -100,12 +100,13 @@ def shelf(request: Request):
 class AggregateAddRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     sourceBookIds: list[str] = Field(min_length=1, max_length=64)
+    expectedBookId: str | None = Field(default=None, pattern=r"^agg-[a-f0-9]{32}$")
 
 
 @router.post("/shelf")
 async def add_aggregate(payload: AggregateAddRequest, request: Request):
     user = auth_service.require_user(request)
-    return await aggregate_reading.add(user.user_id, payload.sourceBookIds)
+    return await aggregate_reading.add(user.user_id, payload.sourceBookIds, expected_identity=payload.expectedBookId)
 
 
 @router.put("/shelf/{book_id}")

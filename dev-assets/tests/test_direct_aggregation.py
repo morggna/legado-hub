@@ -207,3 +207,20 @@ async def test_new_sources_invalidate_degraded_chapter_cache(env):
     second = await service.for_user(user).chapter(book['bookId'], 0)
     assert second['aggregation']['mode'] == 'consensus'
     assert second['aggregation']['supportCount'] == 2
+
+
+async def test_search_identity_excludes_a_source_with_incorrect_detail(env):
+    service, source, user, _ = env
+    source.authors['b'] = '不同作者'
+    expected = identity({'name':'山河','author':'李某'})
+    book = await service.add(user, ids('abc'), expected_identity=expected)
+    assert book['sourceCount'] == 2
+    assert ids('b')[0] not in book['sourceBookIds']
+
+
+async def test_discovery_cannot_resurrect_a_removed_book(env):
+    service, source, user, _ = env
+    with pytest.raises(HTTPException) as exc:
+        await service.add(user, ids('ab'), existing_book_id=ids('a')[0])
+    assert exc.value.status_code == 404
+    assert service.repository.shelf(user) == []

@@ -72,7 +72,7 @@ class AggregateReadingService(CandidateSelectionPolicy):
     def for_user(self, user_id):
         return PersonalAggregateReader(self, user_id)
 
-    async def add(self, user_id, source_ids):
+    async def add(self, user_id, source_ids, expected_identity=None, existing_book_id=None):
         source_ids = list(dict.fromkeys(source_ids))
         if not source_ids or len(source_ids) > 64:
             raise HTTPException(400, "请选择 1 至 64 个来源")
@@ -87,8 +87,12 @@ class AggregateReadingService(CandidateSelectionPolicy):
         if not details:
             raise HTTPException(502, "来源详情暂时不可用，请重试")
         groups = grouped_books(details, details[0]["name"])
+        if expected_identity:
+            groups = [g for g in groups if g["bookId"] == expected_identity]
         if len(groups) != 1:
-            raise HTTPException(400, "来源不是同一本书，请重新搜索")
+            raise HTTPException(400, "来源详情与搜索书籍不符，请重新搜索")
+        if existing_book_id and not self.repository.get(user_id, existing_book_id):
+            raise HTTPException(404, "书籍已移出书库")
         book = groups[0]
         # Keep legacy book IDs/progress/downloads intact. Later discoveries enrich
         # the existing entry, rather than producing another shelf card.
@@ -122,11 +126,18 @@ class AggregateReadingService(CandidateSelectionPolicy):
         if task is None:
             async def discover():
                 candidates = [book["bookId"]]
-                async for result in self.reader.search(book["name"], [s["id"] for s in self.reader.sources()][:64]):
-                    for item in result["items"]:
-                        if identity(item) == identity(book):
-                            candidates.append(item["bookId"])
-                return await self.add(user_id, candidates[:64])
+                try:
+                    async with asyncio.timeout(12):
+                        async for result in self.reader.search(book["name"], [s["id"] for s in self.reader.sources()][:64]):
+                            for item in result["items"]:
+                                if identity(item) == identity(book):
+                                    candidates.append(item["bookId"])
+                except TimeoutError:
+                    pass
+                # Keep legacy first-open discovery below proxy request limits;
+                # explicit search can later enrich the book with slower sources.
+                async with asyncio.timeout(10):
+                    return await self.add(user_id, candidates[:64], expected_identity=identity(book), existing_book_id=book["bookId"])
             task = asyncio.create_task(discover())
             self._upgrades[key] = task
             def done(t):

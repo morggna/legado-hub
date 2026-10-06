@@ -11,7 +11,7 @@ export function DirectSearchPage() {
   const client = useQueryClient()
   const shelf = useQuery({ queryKey: ["direct", "shelf"], queryFn: () => directRequest<{ items: DirectBook[] }>("/shelf") })
   const add = useMutation({ mutationFn: async ({ book, read }: {book: DirectBook; read: boolean}) => {
-    const saved = await directRequest<DirectBook>("/shelf", { method: "POST", body: JSON.stringify({ sourceBookIds: book.sourceBookIds ?? [book.bookId] }) })
+    const saved = await directRequest<DirectBook>("/shelf", { method: "POST", body: JSON.stringify({ sourceBookIds: book.sourceBookIds ?? [book.bookId], expectedBookId: book.bookId.startsWith("agg-") ? book.bookId : undefined }) })
     return {book: saved, read}
   }, onSuccess: async ({book, read}) => {
     await client.invalidateQueries({ queryKey: ["direct", "shelf"] })
