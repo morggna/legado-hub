@@ -39,7 +39,7 @@ TTS, source switching and offline PWA controls are not presented as available.
 
 Deployment pins the upstream v0.4.4 image digest, overlays this fork and uses clean
 persistent directories. The only published listener is 127.0.0.1:8765. The reverse
-proxy is operator-managed; read.uclau.de is allowed. No old accounts, books, cookies
+proxy is operator-managed; book.uclau.de is allowed. No old accounts, books, cookies
 or progress are copied. Existing retired services remain stopped.
 
 ## Scope limitation
@@ -59,3 +59,17 @@ stub live discovery; separate container acceptance exercises real sources.
 The default Docker test asset 本地测试 was absent from Termark inventory. Acceptance
 therefore uses an isolated SG-Oracle container with separate runtime volumes and
 no existing service data. Production startup follows container acceptance.
+
+
+## On-demand multi-source aggregation (2026-10-07)
+
+- `/api/direct/search` retains per-source SSE diagnostics and emits cumulative `groups` using upstream search grouping/ranking. One book is identified by normalized title + author, independent of the set of responding sources. Ambiguous unknown authors are kept separate from known homonyms.
+- `POST /api/direct/shelf` accepts only source-qualified book IDs. The server resolves source metadata, verifies common identity, merges candidates, and stores a single personal shelf entry including cover URL. Adding performs no TOC or chapter crawl.
+- The original TOC candidate ranking, sentence-order outlier detection, similarity voting and gap-based selection now live in `aggregate_selection.py`; both the original batch processor and the personal on-demand reader inherit the same policy. The first three sources are compared, expanding when unanimity is absent. One or two valid candidates can use upstream priority degradation, explicitly reported in the reader. Conflicting multi-source content without a supported candidate fails rather than silently choosing an unrelated chapter.
+- With no official preview, title alignment is required in addition to the original bounded TOC ranking. Matching chapter numbers alone is insufficient. No official paid preview, AI rewriting or deletion of disputed lines is implied: upstream deletion guards require an official anchor, which this anonymous free-source path does not have.
+- On first open, available TOCs are loaded without bodies. The longest catalog supplies the axis; gaps are filled only between adjacent exact anchors. This personal axis is persisted (schema 17); later refreshes only append after an exact tail match, never shift existing progress. New internal gaps cannot be inserted once progress has a stable axis.
+- Only the requested chapter is fetched from candidate sources. There is a 45-second chapter comparison budget, 20-second per-source budget, shared fetch slots, and at most 64 cached chapters per user (2 MiB each). Downloads use the same personal reader and keep a frozen TOC across pause/restart.
+- Legacy shelf IDs, progress, existing downloaded data and covers remain. First online open discovers matching sources using exact normalized title + author; an existing single-source axis is preserved. Search-and-add updates sources of an existing aggregate entry. Disabled/unavailable sources are skipped at read time.
+- Covers use HTTP(S) image URLs with no-referrer and lazy loading. A named placeholder appears on failure; no arbitrary server-side image proxy is introduced.
+
+Validation includes same-book merging, homonym rejection, missing chapters, outlier voting, source failure/degradation, append-only TOCs, concurrency, old IDs/progress, private caches/downloads and zero full-book work on add. The canonical release gate remains `verify.ps1`; Docker acceptance uses the isolated SG Oracle container because the configured 本地测试 Termark asset is unavailable.

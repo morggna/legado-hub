@@ -1,3 +1,4 @@
+import { BookCover } from "@/components/BookCover"
 import { Link } from "react-router"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -20,7 +21,7 @@ export function DirectShelfPage() {
       const job = jobs.data?.items.find(j => j.bookId === b.bookId)
       const active = job && ["queued", "running"].includes(job.state)
       return <div className="rounded-lg border bg-white p-5" key={b.bookId}>
-        <Link to={`/console/library/${encodeURIComponent(b.bookId)}`}><h2 className="font-semibold">{b.name}</h2><p className="mt-1 text-sm text-slate-500">{b.author} · {b.sourceName}</p></Link>
+        <Link className="flex gap-4" to={`/console/library/${encodeURIComponent(b.bookId)}`}><BookCover name={b.name} url={b.coverUrl} /><div className="min-w-0"><h2 className="font-semibold">{b.name}</h2><p className="mt-1 text-sm text-slate-500">{b.author || "作者未知"}</p><p className="mt-2 text-sm text-slate-500">{b.sourceCount ?? 1} 个来源 · {b.sourceCount ? "聚合阅读" : b.sourceName}</p></div></Link>
         <p className="mt-3 text-xs text-slate-500">{job ? `${labels[job.state]} · ${job.completed}/${job.total || "…"} 章` : "按需阅读 · 尚未下载整本"}</p>
         {job?.state === "running" && <progress className="mt-2 w-full" value={job.completed} max={job.total || 1} />}
         {job?.error && <p className="mt-2 text-sm text-red-600">{job.error}</p>}

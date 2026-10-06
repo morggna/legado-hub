@@ -10,18 +10,21 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from app import config
-from app.services.direct_reading import direct_reading
+from app.services.direct_aggregation import aggregate_reading
 from app.storage.direct_reading import direct_repository
 
 
 class BookDownloadService:
     def __init__(self, reader=None, repository=None, root=None):
-        self.reader = reader or direct_reading
+        self.reader = reader
         self.repository = repository or direct_repository
         self.root = root
         self._workers = []
         self._wake = asyncio.Event()
         self._active = {}
+
+    def reader_for(self, user_id):
+        return self.reader or aggregate_reading.for_user(user_id)
 
     def directory(self, user_id, book_id):
         root = self.root or config.DATA_DIR / "direct_books"
@@ -66,7 +69,7 @@ class BookDownloadService:
         self._active.clear()
 
     def enqueue(self, user_id, book_id):
-        self.reader.book_target(book_id)
+        self.reader_for(user_id).book_target(book_id)
         active = self._active.get((user_id, book_id))
         if active and not active.done() and active.cancelling():
             raise HTTPException(409, "下载正在暂停，请稍后重试")
@@ -120,8 +123,9 @@ class BookDownloadService:
     async def run(self, user_id, book_id):
         completed, total = 0, 0
         try:
-            detail = await self.reader.detail(book_id)
-            toc = await self.reader.toc(book_id)
+            reader = self.reader_for(user_id)
+            detail = await reader.detail(book_id)
+            toc = self.cached(user_id, book_id, "toc.json") or await reader.toc(book_id)
             chapters = toc["chapters"]
             total = len(chapters)
             if total > 20000:
@@ -139,7 +143,7 @@ class BookDownloadService:
                 if not cached or cached.get("url") != chapter["url"]:
                     # Use the frozen URL from this job's validated directory, not
                     # an index from a later refreshed TOC during a long download.
-                    result = await self.reader.chapter_at(book_id, chapter)
+                    result = await reader.chapter_at(book_id, chapter)
                     result["url"] = chapter["url"]
                     if len(result["content"].encode()) > 2 * 1024 * 1024:
                         raise HTTPException(400, "单章正文过大")

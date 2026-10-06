@@ -550,6 +550,7 @@ async function waitFor(url, timeoutMs = 30000) {
 }
 
 async function installMocks(page, scenario = {}) {
+  await page.route("https://covers.example/sanguo.svg", route => route.fulfill({contentType: "image/svg+xml", body: decodeURIComponent(coverFixture("三国演义", "#40564c", "#e4d0a5").split(",").slice(1).join(","))}))
   await page.route("**/api/**", async (route) => {
     const req = route.request()
     const url = new URL(req.url())
@@ -568,9 +569,9 @@ function mockApi(path, method, scenario = {}) {
   if (path === "/api/direct/sources") return {items: [{id: "quanben5_com", name: "全本小说网", default: true}, {id: "hjwzw_com", name: "黄金屋", default: true}]}
   if (path === "/api/direct/downloads" || path === "/api/accounts/invitations") return {items: []}
   if (path === "/api/direct/shelf" && scenario.library === "empty") return {items: []}
-  if (path === "/api/direct/shelf") return {items: [{bookId: "fixture-book", sourceId: "fixture", sourceName: "全本小说网", name: "三国演义", author: "罗贯中"}]}
+  if (path === "/api/direct/shelf") return {items: [{bookId: "fixture-book", sourceId: "fixture", sourceName: "全本小说网", name: "三国演义", author: "罗贯中", coverUrl: "https://covers.example/sanguo.svg", sourceCount: 3}]}
   if (path.endsWith("/fixture-book/progress")) return {chapterIndex: 0, position: 0, revision: 0}
-  if (path.endsWith("/fixture-book/detail")) return {bookId: "fixture-book", sourceId: "fixture", sourceName: "全本小说网", name: "三国演义", author: "罗贯中"}
+  if (path.endsWith("/fixture-book/detail")) return {bookId: "fixture-book", sourceId: "fixture", sourceName: "全本小说网", name: "三国演义", author: "罗贯中", coverUrl: "https://covers.example/sanguo.svg", sourceCount: 3}
   if (path.endsWith("/fixture-book/toc")) return {chapters: [{index: 0, title: "第一回 宴桃园豪杰三结义"}, {index: 1, title: "第二回"}]}
   if (path.endsWith("/fixture-book/chapters/0")) return {title: "第一回 宴桃园豪杰三结义", content: ("滚滚长江东逝水，浪花淘尽英雄。是非成败转头空。\n青山依旧在，几度夕阳红。\n\n").repeat(12)}
   if (path === "/api/auth/entrypoint") {

@@ -9,6 +9,7 @@ import './reader.css'
 
 interface Props {
   userId: string; title: string; chapters: DirectChapter[]; index: number
+  sourceStatus?: string
   chapter?: { title: string; content: string }; loading: boolean; error?: string
   position: number; onPosition: (position: number) => void
   onChapter: (index: number, position?: number) => void; onClose: () => void; onRetry: () => void
@@ -87,6 +88,7 @@ export function LegadoReader(props: Props) {
       {props.loading ? <p className="reader-status" role="status">正在获取当前章节…</p> : props.chapter && <ChapterCanvas key={props.index} chapter={props.chapter} settings={settings} position={props.position} onPosition={props.onPosition} onPrevious={() => change(props.index - 1, 1)} onNext={() => change(props.index + 1)} onToggle={() => { setHint(false); setTools(v => !v) }} paused={!!drawer} />}
     </main>
     <footer className="reader-floating-footer" inert={!tools || !!drawer}>
+      {props.sourceStatus && <p className="reader-source-status">{props.sourceStatus}</p>}
       <div className="reader-chapter-control-bar">
         <button type="button" className="reader-chapter-btn" disabled={props.index === 0} onClick={() => change(props.index - 1)}><Icon name="arrowLeft" />上一章</button>
         <div className="reader-chapter-slider-wrap"><div className="reader-chapter-info"><span className="chapter-num">{displayed + 1} / {props.chapters.length || '…'}</span><span className="chapter-name">{props.chapters[displayed]?.title}</span></div>

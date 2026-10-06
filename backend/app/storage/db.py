@@ -7,7 +7,7 @@ from pathlib import Path
 
 from app.config import DATA_DIR, DB_PATH
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -56,6 +56,23 @@ CREATE TABLE IF NOT EXISTS direct_bookshelf (
     metadata_json TEXT NOT NULL,
     updated_at TEXT DEFAULT (datetime('now')),
     PRIMARY KEY(user_id, book_id)
+);
+CREATE TABLE IF NOT EXISTS direct_aggregate_tocs (
+    user_id TEXT NOT NULL,
+    book_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY(user_id,book_id),
+    FOREIGN KEY(user_id,book_id) REFERENCES direct_bookshelf(user_id,book_id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS direct_aggregate_chapters (
+    user_id TEXT NOT NULL,
+    book_id TEXT NOT NULL,
+    chapter_index INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY(user_id,book_id,chapter_index),
+    FOREIGN KEY(user_id,book_id) REFERENCES direct_bookshelf(user_id,book_id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS direct_progress (
     user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,

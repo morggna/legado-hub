@@ -7,8 +7,8 @@ services:
     environment:
       PUID: '1000'
       PGID: '1000'
-      LEGADOHUB_ALLOWED_HOSTS: read.uclau.de,127.0.0.1,localhost
-      LEGADOHUB_ALLOWED_ORIGINS: https://read.uclau.de,http://127.0.0.1:8765
+      LEGADOHUB_ALLOWED_HOSTS: book.uclau.de,127.0.0.1,localhost
+      LEGADOHUB_ALLOWED_ORIGINS: https://book.uclau.de,http://127.0.0.1:8765
       LEGADOHUB_TRUSTED_PROXIES: 127.0.0.1/32,192.168.224.1/32
       LEGADOHUB_AUTH_MODE: account_invite
     command: [python, -m, uvicorn, 'app.main:app', --host, 0.0.0.0, --port, '8765', --proxy-headers, --forwarded-allow-ips, '127.0.0.1,192.168.224.1']

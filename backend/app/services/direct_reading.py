@@ -7,7 +7,7 @@ import ipaddress
 import os
 import time
 from collections import OrderedDict
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urljoin
 
 from fastapi import HTTPException
 
@@ -124,7 +124,7 @@ class DirectReadingService:
             return {"bookId": book_id, "sourceId": source_id,
                     "sourceName": self.plugin(source_id).metadata.name,
                     "name": str(raw.get("name", "")), "author": str(raw.get("author", "")),
-                    "intro": str(raw.get("intro", "")), "coverUrl": str(raw.get("coverUrl", "")),
+                    "intro": str(raw.get("intro", "")), "coverUrl": urljoin(url, str(raw.get("coverUrl") or "")) if raw.get("coverUrl") else "",
                     "tocUrl": self.validate_url(source_id, raw.get("tocUrl") or url)}
         return await self.cached(("detail", book_id), load)
 
@@ -164,15 +164,21 @@ class DirectReadingService:
         if not result.get("content"):
             raise HTTPException(502, "书源未返回正文")
         return {"index": index, "title": result.get("title") or chapter["title"],
-                "content": str(result["content"])}
+                "content": str(result["content"]),
+                "wordCount": result.get("sourceWordCount") or result.get("wordCount", 0),
+                "previewOnly": any(result.get(k) or (result.get("debug") or {}).get(k) for k in ("previewOnly", "isPreview", "preview_only")),
+                "extra": result.get("extra") if isinstance(result.get("extra"), dict) else {}}
 
     async def search(self, keyword, source_ids, page=1):
         for source_id in source_ids:
             self.plugin(source_id)
         limit = asyncio.Semaphore(4)
         async def one(source_id):
-            async with limit, self._slots:
-                result = await self.scheduler.search_one(source_id, keyword, page)
+            try:
+                async with limit, self._slots:
+                    result = await asyncio.wait_for(self.scheduler.search_one(source_id, keyword, page), 25)
+            except Exception:
+                result = {"items": [], "error": {"message": "书源搜索暂时不可用"}}
             items = []
             for raw in result.get("items", [])[:200]:
                 url = raw.get("bookUrl", "")
@@ -182,7 +188,9 @@ class DirectReadingService:
                     continue
                 items.append({"bookId": encode_book_id(source_id, url), "sourceId": source_id,
                               "sourceName": self.plugin(source_id).metadata.name,
-                              "name": str(raw.get("name", "")), "author": str(raw.get("author", ""))})
+                              "name": str(raw.get("name", "")), "author": str(raw.get("author", "")),
+                              "coverUrl": urljoin(url, str(raw.get("coverUrl") or "")) if raw.get("coverUrl") else "",
+                              "intro": str(raw.get("intro") or "")})
             return {"sourceId": source_id, "items": items, "error": result.get("error"),
                     "latencyMs": result.get("latencyMs", 0)}
         tasks = [asyncio.create_task(one(s)) for s in source_ids]

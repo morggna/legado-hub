@@ -1,8 +1,8 @@
-export interface DirectBook { bookId: string; sourceId: string; sourceName: string; name: string; author: string; intro?: string }
+export interface DirectBook { bookId: string; sourceId: string; sourceName: string; name: string; author: string; intro?: string; coverUrl?: string; sourceCount?: number; sourceBookIds?: string[]; sources?: DirectBook[] }
 export interface DirectSource { id: string; name: string; default?: boolean }
 export interface DirectChapter { index: number; title: string }
 export interface Progress { chapterIndex: number; position: number; revision: number }
-export interface SearchResult { sourceId: string; items: DirectBook[]; error?: { message: string } | string; latencyMs: number }
+export interface SearchResult { sourceId: string; items: DirectBook[]; groups?: DirectBook[]; error?: { message: string } | string; latencyMs: number }
 
 export async function directRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`/api/direct${path}`, { credentials: "same-origin", ...init,

@@ -82,3 +82,5 @@ dev-assets/tests/*
 !dev-assets/tests/test_direct_reading.py
 !dev-assets/tests/test_account_invites.py
 !dev-assets/tests/test_book_downloads.py
+
+!dev-assets/tests/test_direct_aggregation.py

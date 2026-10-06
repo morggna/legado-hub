@@ -63,6 +63,31 @@ class DirectReadingRepository:
             row = conn.execute("SELECT metadata_json FROM direct_bookshelf WHERE user_id=? AND book_id=?", (user_id, book_id)).fetchone()
         return json.loads(row[0]) if row else None
 
+    def aggregate_toc(self, user_id, book_id):
+        with self.connect() as conn:
+            row = conn.execute("SELECT payload_json,updated_at FROM direct_aggregate_tocs WHERE user_id=? AND book_id=?", (user_id, book_id)).fetchone()
+        return (json.loads(row[0]), row[1]) if row else (None, 0)
+
+    def save_aggregate_toc(self, user_id, book_id, payload):
+        import time
+        with self.connect() as conn:
+            conn.execute("""INSERT INTO direct_aggregate_tocs VALUES(?,?,?,?)
+                ON CONFLICT(user_id,book_id) DO UPDATE SET payload_json=excluded.payload_json,updated_at=excluded.updated_at""",
+                (user_id, book_id, json.dumps(payload, ensure_ascii=False), time.time()))
+
+    def aggregate_chapter(self, user_id, book_id, index):
+        with self.connect() as conn:
+            row = conn.execute("SELECT payload_json FROM direct_aggregate_chapters WHERE user_id=? AND book_id=? AND chapter_index=?", (user_id, book_id, index)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def save_aggregate_chapter(self, user_id, book_id, index, payload):
+        import time
+        with self.connect() as conn:
+            conn.execute("INSERT OR REPLACE INTO direct_aggregate_chapters VALUES(?,?,?,?,?)", (user_id, book_id, index, json.dumps(payload, ensure_ascii=False), time.time()))
+            # At most 64 chapters/user, each limited to 2 MiB by the reader.
+            conn.execute("""DELETE FROM direct_aggregate_chapters WHERE user_id=? AND rowid NOT IN
+                (SELECT rowid FROM direct_aggregate_chapters WHERE user_id=? ORDER BY updated_at DESC LIMIT 64)""", (user_id, user_id))
+
     def downloads(self, user_id):
         with self.connect() as conn:
             rows = conn.execute("SELECT * FROM direct_download_jobs WHERE user_id=?", (user_id,)).fetchall()

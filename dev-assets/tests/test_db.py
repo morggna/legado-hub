@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from app.storage.db import initialize_database
+from app.storage.db import initialize_database, SCHEMA_VERSION
 
 
 def test_initialize_database(tmp_path: Path) -> None:
@@ -22,6 +22,8 @@ def test_initialize_database(tmp_path: Path) -> None:
     expected = {
         "schema_meta",
         "direct_bookshelf",
+        "direct_aggregate_tocs",
+        "direct_aggregate_chapters",
         "direct_progress",
         "books",
         "chapters",
@@ -58,7 +60,7 @@ def test_initialize_database(tmp_path: Path) -> None:
         version = conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'version'"
         ).fetchone()
-        assert version == ("16",)
+        assert version == (str(SCHEMA_VERSION),)
 
         foreign_keys = conn.execute(
             "PRAGMA foreign_key_list(user_book_subscriptions)"
@@ -192,7 +194,7 @@ def test_v13_upgrade_preserves_users_and_invalidates_raw_sessions(tmp_path: Path
     with sqlite3.connect(db_path) as conn:
         assert conn.execute("SELECT username FROM users WHERE user_id = 'u1'").fetchone() == ("reader",)
         assert conn.execute("SELECT user_id FROM user_sessions WHERE session_id = 's1'").fetchone() is None
-        assert conn.execute("SELECT value FROM schema_meta WHERE key = 'version'").fetchone() == ("16",)
+        assert conn.execute("SELECT value FROM schema_meta WHERE key = 'version'").fetchone() == (str(SCHEMA_VERSION),)
         assert conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'user_book_subscriptions'"
         ).fetchone() == (1,)
@@ -220,7 +222,7 @@ def test_v14_upgrade_backfills_raw_source_snapshot_content(tmp_path: Path) -> No
         ).fetchone() == ("legacy cleaned body",)
         assert conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'version'"
-        ).fetchone() == ("16",)
+        ).fetchone() == (str(SCHEMA_VERSION),)
 
 
 def test_v10_upgrade_adds_subscription_search_jobs_without_touching_users(
@@ -247,7 +249,7 @@ def test_v10_upgrade_adds_subscription_search_jobs_without_touching_users(
         ).fetchone() == (1,)
         assert conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'version'"
-        ).fetchone() == ("16",)
+        ).fetchone() == (str(SCHEMA_VERSION),)
 
 
 def test_v11_upgrade_backfills_shared_book_creator_from_create_log(tmp_path: Path) -> None:
@@ -282,7 +284,7 @@ def test_v11_upgrade_backfills_shared_book_creator_from_create_log(tmp_path: Pat
         assert creators == {"b1": "u1", "b2": "u2", "b3": ""}
         assert conn.execute(
             "SELECT value FROM schema_meta WHERE key = 'version'"
-        ).fetchone() == ("16",)
+        ).fetchone() == (str(SCHEMA_VERSION),)
 
 
 def test_subscription_constraints_and_cascade(tmp_path: Path) -> None:
@@ -323,3 +325,24 @@ def test_subscription_constraints_and_cascade(tmp_path: Path) -> None:
         assert conn.execute(
             "SELECT 1 FROM subscription_search_jobs WHERE job_id = 'j1'"
         ).fetchone() is None
+
+
+def test_v16_to_v17_keeps_personal_books_progress_and_jobs(tmp_path):
+    db = tmp_path / "v16.db"
+    initialize_database(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO users(user_id,username,password_hash) VALUES('u','reader','hash')")
+        conn.execute("INSERT INTO direct_bookshelf(user_id,book_id,metadata_json) VALUES('u','legacy','{\"name\":\"book\",\"coverUrl\":\"https://cover.example/a.jpg\"}')")
+        conn.execute("INSERT INTO direct_progress(user_id,book_id,chapter_index,position,revision) VALUES('u','legacy',42,.3,7)")
+        conn.execute("INSERT INTO direct_download_jobs(user_id,book_id,state,completed,total) VALUES('u','legacy','paused',10,100)")
+        conn.execute("DROP TABLE direct_aggregate_tocs")
+        conn.execute("DROP TABLE direct_aggregate_chapters")
+        conn.execute("UPDATE schema_meta SET value='16' WHERE key='version'")
+        before = {table:conn.execute('SELECT * FROM '+table).fetchall() for table in ['users','direct_bookshelf','direct_progress','direct_download_jobs']}
+    initialize_database(db)
+    initialize_database(db)
+    with sqlite3.connect(db) as conn:
+        for table,rows in before.items():
+            assert conn.execute('SELECT * FROM '+table).fetchall() == rows
+        assert conn.execute("SELECT count(*) FROM direct_aggregate_tocs").fetchone() == (0,)
+        assert conn.execute("SELECT count(*) FROM direct_aggregate_chapters").fetchone() == (0,)

@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 
 from app.api import auth, direct
 from app.services.direct_reading import DirectReadingService
+from app.services.direct_aggregation import AggregateReadingService
 from app.services.user_auth import UserAuthService
 from app.source_plugins.id_codec import encode_book_id
 from app.storage.db import initialize_database
@@ -52,7 +53,10 @@ def app_env(tmp_path, monkeypatch):
     monkeypatch.setattr(auth, "auth_service", service)
     monkeypatch.setattr(direct, "direct_reading", reader)
     monkeypatch.setattr(direct, "direct_repository", repo)
-    monkeypatch.setattr(direct, "book_downloads", BookDownloadService(reader, repo, tmp_path / "books"))
+    aggregation = AggregateReadingService(reader, repo)
+    monkeypatch.setattr(direct, "aggregate_reading", aggregation)
+    monkeypatch.setattr("app.services.book_downloads.aggregate_reading", aggregation)
+    monkeypatch.setattr(direct, "book_downloads", BookDownloadService(None, repo, tmp_path / "books"))
     app = FastAPI()
     app.state.entrypoint = "combined"
     app.include_router(auth.router)
@@ -201,7 +205,25 @@ async def test_read_during_download_uses_frozen_toc_for_uncached_chapter(app_env
     directory = direct.book_downloads.directory(uid, BOOK)
     directory.mkdir(parents=True)
     direct.book_downloads.write_json(directory / "toc.json", {"chapters": [{"index": 0, "title": "Frozen", "url": "https://books.example/frozen/0"}]})
+    async def frozen_chapter(source, url):
+        scheduler.chapter_calls.append(url)
+        return {"title": "Frozen", "content": "Original frozen chapter body. " * 10}
+    scheduler.chapter = frozen_chapter
     c = await client(app, "readerA")
     async with c:
         assert (await c.get(f"/api/direct/books/{BOOK}/chapters/0")).status_code == 200
     assert scheduler.chapter_calls == ["https://books.example/frozen/0"]
+
+
+async def test_aggregate_shelf_api_and_personal_ownership(app_env):
+    app, _, _, _, _, _, _ = app_env
+    a, b = await client(app, 'readerA'), await client(app, 'readerB')
+    async with a, b:
+        response = await a.post('/api/direct/shelf', json={'sourceBookIds':[BOOK]})
+        assert response.status_code == 200, response.text
+        book = response.json()
+        assert book['sourceCount'] == 1 and book['bookId'].startswith('agg-')
+        assert (await a.get(f"/api/direct/books/{book['bookId']}/toc")).status_code == 200
+        for route in ['detail','toc','progress','chapters/0']:
+            assert (await b.get(f"/api/direct/books/{book['bookId']}/{route}")).status_code == 404
+        assert (await b.post(f"/api/direct/books/{book['bookId']}/download")).status_code == 404

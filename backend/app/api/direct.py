@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.user_auth import auth_service
 from app.services.direct_reading import direct_reading
+from app.services.direct_aggregation import aggregate_reading, grouped_books
 from app.storage.direct_reading import direct_repository
 
 router = APIRouter(prefix="/api/direct")
@@ -51,8 +52,11 @@ async def search(request: Request, keyword: str = Query(min_length=1, max_length
             if not _active_searches[user.user_id]:
                 del _active_searches[user.user_id]
     async def stream():
+        items = []
         try:
             async for result in direct_reading.search(keyword.strip(), source_ids, page):
+                items.extend(result["items"])
+                result["groups"] = grouped_books(items, keyword.strip())
                 yield "data: " + json.dumps(result, ensure_ascii=False) + "\n\n"
             yield 'event: done\ndata: {}\n\n'
         finally:
@@ -63,13 +67,13 @@ async def search(request: Request, keyword: str = Query(min_length=1, max_length
 @router.get("/books/{book_id}/detail")
 async def detail(book_id: str, request: Request):
     user = auth_service.require_user(request)
-    return book_downloads.cached(user.user_id, book_id, "detail.json") or await direct_reading.detail(book_id)
+    return book_downloads.cached(user.user_id, book_id, "detail.json") or await aggregate_reading.for_user(user.user_id).detail(book_id)
 
 
 @router.get("/books/{book_id}/toc")
 async def toc(book_id: str, request: Request):
     user = auth_service.require_user(request)
-    result = book_downloads.cached(user.user_id, book_id, "toc.json") or await direct_reading.toc(book_id)
+    result = book_downloads.cached(user.user_id, book_id, "toc.json") or await aggregate_reading.for_user(user.user_id).toc(book_id)
     return {"bookId": book_id, "chapters": [{"index": c["index"], "title": c["title"]} for c in result["chapters"]]}
 
 
@@ -83,8 +87,8 @@ async def chapter(book_id: str, index: int, request: Request):
     if snapshot:
         if not 0 <= index < len(snapshot["chapters"]):
             raise HTTPException(404, "章节不存在")
-        return await direct_reading.chapter_at(book_id, snapshot["chapters"][index])
-    return await direct_reading.chapter(book_id, index)
+        return await aggregate_reading.for_user(user.user_id).chapter_at(book_id, snapshot["chapters"][index])
+    return await aggregate_reading.for_user(user.user_id).chapter(book_id, index)
 
 
 @router.get("/shelf")
@@ -93,10 +97,21 @@ def shelf(request: Request):
     return {"items": direct_repository.shelf(user.user_id)}
 
 
+class AggregateAddRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    sourceBookIds: list[str] = Field(min_length=1, max_length=64)
+
+
+@router.post("/shelf")
+async def add_aggregate(payload: AggregateAddRequest, request: Request):
+    user = auth_service.require_user(request)
+    return await aggregate_reading.add(user.user_id, payload.sourceBookIds)
+
+
 @router.put("/shelf/{book_id}")
 async def save(book_id: str, request: Request):
     user = auth_service.require_user(request)
-    return direct_repository.save(user.user_id, await direct_reading.detail(book_id))
+    return direct_repository.save(user.user_id, await aggregate_reading.for_user(user.user_id).detail(book_id))
 
 
 @router.delete("/shelf/{book_id}")
@@ -109,14 +124,14 @@ async def remove(book_id: str, request: Request):
 @router.get("/books/{book_id}/progress")
 def progress(book_id: str, request: Request):
     user = auth_service.require_user(request)
-    direct_reading.book_target(book_id)
+    aggregate_reading.for_user(user.user_id).book_target(book_id)
     return direct_repository.progress(user.user_id, book_id)
 
 
 @router.put("/books/{book_id}/progress")
 async def update_progress(book_id: str, payload: ProgressRequest, request: Request):
     user = auth_service.require_user(request)
-    toc = book_downloads.cached(user.user_id, book_id, "toc.json") or await direct_reading.toc(book_id)
+    toc = book_downloads.cached(user.user_id, book_id, "toc.json") or await aggregate_reading.for_user(user.user_id).toc(book_id)
     if payload.chapterIndex >= len(toc["chapters"]):
         raise HTTPException(400, "章节超出目录范围")
     return direct_repository.update_progress(user.user_id, book_id, payload.chapterIndex, payload.position, payload.revision)

@@ -22,7 +22,7 @@ function Reader({ bookId, initial }: { bookId: string; initial: Progress }) {
   const path = bookPath(bookId)
   const detail = useQuery({ queryKey: ["direct", "detail", bookId], queryFn: () => directRequest<DirectBook>(`${path}/detail`) })
   const toc = useQuery({ queryKey: ["direct", "toc", bookId], queryFn: () => directRequest<{ chapters: DirectChapter[] }>(`${path}/toc`) })
-  const chapter = useQuery({ queryKey: ["direct", "chapter", bookId, index], queryFn: ({ signal }) => directRequest<{ title: string; content: string }>(`${path}/chapters/${index}`, { signal }), enabled: !!toc.data, retry: false, staleTime: 300000, refetchOnWindowFocus: false })
+  const chapter = useQuery({ queryKey: ["direct", "chapter", bookId, index], queryFn: ({ signal }) => directRequest<{ title: string; content: string; aggregation?: { mode: string; selectedSourceName: string; acceptedCount: number; supportCount: number } }>(`${path}/chapters/${index}`, { signal }), enabled: !!toc.data, retry: false, staleTime: 300000, refetchOnWindowFocus: false })
   const revision = useRef(initial.revision)
   const queue = useRef<Promise<void>>(Promise.resolve())
   const blocked = useRef(false)
@@ -66,7 +66,7 @@ function Reader({ bookId, initial }: { bookId: string; initial: Progress }) {
   }, [index, save])
   const failure = detail.error || toc.error || chapter.error
   return <LegadoReader userId={userId} title={detail.data?.name || "载入书籍…"} chapters={toc.data?.chapters ?? []} index={index}
-    chapter={chapter.data} loading={chapter.isPending || toc.isPending} error={failure?.message || saveError}
+    chapter={chapter.data} sourceStatus={chapter.data?.aggregation ? `${chapter.data.aggregation.selectedSourceName} · ${chapter.data.aggregation.mode === "consensus" ? `${chapter.data.aggregation.supportCount + 1} 源正文一致` : "降级阅读：来源不足或尚无共识"}` : undefined} loading={chapter.isPending || toc.isPending} error={failure?.message || saveError}
     position={resume} onPosition={updatePosition} onChapter={changeChapter} onClose={() => navigate("/console/library")}
     onRetry={() => { if (saveError) window.location.reload(); else { void detail.refetch(); void toc.refetch(); void chapter.refetch() } }} />
 }

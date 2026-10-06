@@ -343,3 +343,5 @@
 }
 
 .legado-reader .reader-immersive-hint { position: fixed; bottom: calc(28px + var(--safe-bottom)); left: 50%; transform: translateX(-50%); z-index: 25; padding: 9px 16px; border-radius: 24px; background: var(--surface-muted); border: 1px solid var(--line); color: var(--muted); font-size: 12px; white-space: nowrap; pointer-events: none; }
+
+.reader-source-status { font-size: 12px; text-align: center; opacity: .7; margin: 0 0 6px; }
