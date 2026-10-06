@@ -77,6 +77,60 @@ async def toc(book_id: str, request: Request):
     return {"bookId": book_id, "chapters": [{"index": c["index"], "title": c["title"]} for c in result["chapters"]]}
 
 
+@router.get("/books/{book_id}/overview")
+async def overview(book_id: str, request: Request, page: int = Query(default=1, ge=1),
+                   pageSize: int = Query(default=50, ge=1, le=100), keyword: str = Query(default="", max_length=100),
+                   status: str = Query(default="all", pattern="^(all|downloaded|cached|on_demand|failed)$")):
+    user = auth_service.require_user(request)
+    book = direct_repository.get(user.user_id, book_id)
+    if not book:
+        raise HTTPException(404, "书籍不在你的书库中")
+    snapshot = book_downloads.cached(user.user_id, book_id, "toc.json")
+    toc = snapshot or await aggregate_reading.for_user(user.user_id).toc(book_id, allow_empty=True)
+    # Legacy upgrade may enrich shelf metadata while loading the directory.
+    book = direct_repository.get(user.user_id, book_id) or book
+    summaries = direct_repository.chapter_summaries(user.user_id, book_id)
+    directory = book_downloads.directory(user.user_id, book_id)
+    # Filenames suffice for download status. Never deserialize the entire book.
+    files = {p.name for p in directory.glob("chapter-*.json")} if snapshot else set()
+    job = direct_repository.download(user.user_id, book_id)
+    counts = {"downloaded": 0, "cached": 0, "on_demand": 0, "failed": 0}
+    rows = []
+    for chapter in toc["chapters"]:
+        index = chapter["index"]
+        cached = summaries.get(index)
+        cached = cached if cached and cached["title"] == chapter["title"] else None
+        audit = cached.get("aggregation") if cached else None
+        state = "downloaded" if f"chapter-{index}.json" in files else "cached" if cached else "on_demand"
+        if state == "on_demand" and job and job["state"] == "failed" and index == job["completed"]:
+            state = "failed"
+        counts[state] += 1
+        if keyword.casefold() not in chapter["title"].casefold() or (status != "all" and state != status):
+            continue
+        rows.append({"index": index, "title": chapter["title"], "status": state,
+                     "selectedSourceName": audit.get("selectedSourceName") if audit else None,
+                     "aggregation": audit, "error": job["error"] if state == "failed" else None})
+    catalog = toc
+    if snapshot and not snapshot.get("sources"):
+        # Enrich old downloaded books without replacing their frozen chapter axis.
+        try:
+            catalog = await aggregate_reading.for_user(user.user_id).toc(book_id, allow_empty=True)
+        except HTTPException as exc:
+            if exc.status_code != 502:
+                raise
+    stored_toc, _ = direct_repository.aggregate_toc(user.user_id, book_id)
+    sources = catalog.get("sources") or (stored_toc or {}).get("sources")
+    if not sources:
+        sources = [{"sourceId": s["sourceId"], "sourceName": s["sourceName"], "status": "unknown",
+                    "chapterCount": None, "lastChapter": "", "latencyMs": None}
+                   for s in book.get("sources") or [book]]
+    start = (page-1)*pageSize
+    return {"book": book, "sources": sources, "checkedAt": catalog.get("checkedAt"),
+            "progress": direct_repository.progress(user.user_id, book_id), "download": job,
+            "chapterCount": len(toc["chapters"]), "counts": counts, "total": len(rows),
+            "chapters": rows[start:start+pageSize], "page": page, "pageSize": pageSize}
+
+
 @router.get("/books/{book_id}/chapters/{index}")
 async def chapter(book_id: str, index: int, request: Request):
     user = auth_service.require_user(request)

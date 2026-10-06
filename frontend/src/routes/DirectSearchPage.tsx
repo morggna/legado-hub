@@ -75,7 +75,7 @@ export function DirectSearchPage() {
       const owned = shelf.data?.items.find(item => item.bookId === b.bookId || b.sourceBookIds?.includes(item.bookId))
       return <div key={b.bookId} className="rounded-lg border bg-white p-4">
         <div className="flex gap-4"><BookCover name={b.name} url={b.coverUrl} /><div className="min-w-0"><h2 className="font-semibold">{b.name}</h2><p className="mt-1 text-sm text-slate-500">{b.author || "作者未知"}</p><p className="mt-2 text-sm text-slate-500">{b.sourceCount ?? 1} 个来源 · 聚合阅读</p><p className="mt-2 line-clamp-2 text-xs text-slate-400">{b.sources?.map(s => s.sourceName).join("、") || b.sourceName}</p></div></div>
-        <div className="mt-4 flex gap-2"><Button size="sm" disabled={add.isPending || busy} onClick={() => add.mutate({book: b, read: true})}>{owned ? "打开阅读" : "加入并阅读"}</Button>
+        <div className="mt-4 flex gap-2"><Button size="sm" disabled={add.isPending || busy} onClick={() => add.mutate({book: b, read: true})}>{owned ? "查看目录" : "加入并查看目录"}</Button>
           {<Button variant="outline" size="sm" disabled={add.isPending || busy} onClick={() => add.mutate({book: b, read: false})}>{owned ? "更新来源" : "加入书库"}</Button>}
         </div>
       </div>

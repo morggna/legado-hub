@@ -42,3 +42,14 @@ export async function streamSearch(keyword: string, sources: string[], page: num
     }
   } finally { reader.releaseLock() }
 }
+
+export interface DownloadJob { bookId: string; state: "queued" | "running" | "paused" | "failed" | "completed"; completed: number; total: number; error: string }
+export const downloadLabels = { queued: "等待下载", running: "正在下载", paused: "已暂停", failed: "下载失败", completed: "已下载整本" }
+export interface ChapterAudit { mode: string; selectedSourceName: string; supportCount: number; sources: {sourceId: string; sourceName: string; status: string}[] }
+export interface BookOverview {
+  book: DirectBook; sources: {sourceId: string; sourceName: string; status: string; chapterCount: number | null; lastChapter: string; latencyMs: number | null}[]
+  checkedAt?: number; progress: Progress; download: DownloadJob | null; chapterCount: number; counts: Record<string, number>
+  total: number; chapters: (DirectChapter & {status: string; selectedSourceName?: string; aggregation?: ChapterAudit; error?: string})[]; page: number; pageSize: number
+}
+export const bookDetailUrl = (id: string) => `/console/library/${encodeURIComponent(id)}`
+export const bookReaderUrl = (id: string, chapter?: number) => `${bookDetailUrl(id)}/read${chapter === undefined ? "" : `?chapter=${chapter}`}`

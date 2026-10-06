@@ -11,7 +11,7 @@ beforeEach(() => {
   vi.stubGlobal('localStorage', {getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value)})
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
-function mount() {
+function mount(entry = "/books/test") {
   const fetcher = vi.fn(async (input: string, init?: RequestInit) => {
     let body: unknown = {}
     if (input.endsWith('/progress')) body = init?.method === 'PUT' ? {...JSON.parse(String(init.body)), revision: 1} : {chapterIndex: 0, position: 0, revision: 0}
@@ -23,7 +23,7 @@ function mount() {
   })
   vi.stubGlobal('fetch', fetcher)
   const client = new QueryClient({defaultOptions: {queries: {retry:false}}})
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/books/test']}><Routes><Route path="/books/:bookId" element={<DirectReaderPage />} /></Routes></MemoryRouter></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[entry]}><Routes><Route path="/books/:bookId" element={<DirectReaderPage />} /><Route path="/console/library/:bookId" element={<p>目录页面</p>} /></Routes></MemoryRouter></QueryClientProvider>)
   return fetcher
 }
 it('fetches only the current chapter; navigating reads one new chapter without starting a download', async () => {
@@ -65,4 +65,19 @@ it('opens in immersive mode and toggles both toolbars without fetching another c
   fireEvent.keyDown(window, {key:'Escape'})
   expect(root).toHaveClass('toolbars-hidden')
   expect(fetcher.mock.calls.filter(([url]) => url.includes('/chapters/'))).toHaveLength(1)
+})
+
+it('opens a catalog-selected chapter instead of saved progress and returns to its catalog', async () => {
+  const fetcher = mount('/books/test?chapter=1')
+  await screen.findByText('次章内容')
+  expect(fetcher.mock.calls.filter(([url]) => url.includes('/chapters/')).map(([url]) => url)).toEqual(['/api/direct/books/test/chapters/1'])
+  await waitFor(() => expect(fetcher.mock.calls.some(([url,init]) => url.endsWith('/progress') && init?.method === 'PUT' && JSON.parse(String(init.body)).chapterIndex === 1)).toBe(true))
+  fireEvent.keyDown(window, {key:'Escape'})
+  fireEvent.click(screen.getByRole('button',{name:'返回目录'}))
+  await screen.findByText('目录页面')
+})
+it('rejects an invalid catalog chapter without requesting a body or hanging in loading state', async () => {
+  const fetcher = mount('/books/test?chapter=200')
+  await screen.findByText('章节不存在，请返回目录选择章节')
+  expect(fetcher.mock.calls.some(([url]) => url.includes('/chapters/'))).toBe(false)
 })

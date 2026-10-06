@@ -26,7 +26,8 @@ const pages = [
   { id: "combined-login", title: "统一账号登录", currentPath: "/login", scenario: {role: "anonymous", entrypoint: "combined"} },
   { id: "direct-search", title: "第三方直接阅读", currentPath: "/console/search", scenario: {role: "user", entrypoint: "combined"} },
   { id: "direct-shelf", title: "个人书架", currentPath: "/console/library", scenario: {role: "user", entrypoint: "combined"} },
-  { id: "direct-reader", title: "按需章节阅读", currentPath: "/console/library/fixture-book", scenario: {role: "user", entrypoint: "combined"} },
+  { id: "direct-book-detail", title: "书籍目录与线路", currentPath: "/console/library/fixture-book", scenario: {role: "user", entrypoint: "combined"} },
+  { id: "direct-reader", title: "按需章节阅读", currentPath: "/console/library/fixture-book/read", scenario: {role: "user", entrypoint: "combined"} },
   {
     id: "login",
     title: "登录页",
@@ -570,6 +571,12 @@ function mockApi(path, method, scenario = {}) {
   if (path === "/api/direct/downloads" || path === "/api/accounts/invitations") return {items: []}
   if (path === "/api/direct/shelf" && scenario.library === "empty") return {items: []}
   if (path === "/api/direct/shelf") return {items: [{bookId: "fixture-book", sourceId: "fixture", sourceName: "全本小说网", name: "三国演义", author: "罗贯中", coverUrl: "https://covers.example/sanguo.svg", sourceCount: 3}]}
+  if (path.endsWith("/fixture-book/overview")) return {
+    book: {bookId:"fixture-book",name:"三国演义",author:"罗贯中",coverUrl:"https://covers.example/sanguo.svg",intro:"天下大势，分久必合，合久必分。"},
+    sources: [{sourceId:"a",sourceName:"全本小说网",status:"available",chapterCount:120,lastChapter:"第一百二十回 三分归一统",latencyMs:230}, {sourceId:"b",sourceName:"黄金屋",status:"available",chapterCount:120,lastChapter:"第一百二十回 三分归一统",latencyMs:840}, {sourceId:"c",sourceName:"备用书源",status:"unavailable",chapterCount:0,lastChapter:"",latencyMs:20000}],
+    progress:{chapterIndex:1,position:.3,revision:2},download:null,chapterCount:120,total:120,counts:{downloaded:1,cached:1,on_demand:118,failed:0},page:1,pageSize:50,
+    chapters:[{index:0,title:"第一回 宴桃园豪杰三结义",status:"downloaded"},{index:1,title:"第二回 张翼德怒鞭督邮",status:"cached",selectedSourceName:"全本小说网",aggregation:{mode:"consensus",supportCount:1,sources:[{sourceId:"a",sourceName:"全本小说网",status:"accepted"},{sourceId:"b",sourceName:"黄金屋",status:"accepted"}]}},{index:2,title:"第三回 议温明董卓叱丁原",status:"on_demand"},{index:3,title:"第四回 废汉帝陈留践位",status:"on_demand"}]
+  }
   if (path.endsWith("/fixture-book/progress")) return {chapterIndex: 0, position: 0, revision: 0}
   if (path.endsWith("/fixture-book/detail")) return {bookId: "fixture-book", sourceId: "fixture", sourceName: "全本小说网", name: "三国演义", author: "罗贯中", coverUrl: "https://covers.example/sanguo.svg", sourceCount: 3}
   if (path.endsWith("/fixture-book/toc")) return {chapters: [{index: 0, title: "第一回 宴桃园豪杰三结义"}, {index: 1, title: "第二回"}]}

@@ -69,7 +69,7 @@ export function LegadoReader(props: Props) {
   return <div className={`legado-reader reader-workspace theme-${settings.theme} ${tools ? 'toolbars-open' : 'toolbars-hidden'}`} style={style} onKeyDown={e => { if (e.key === "Escape" && drawer) { e.stopPropagation(); setDrawer(null) } }}>
     {hint && <div className="reader-immersive-hint" role="status">轻点正文中间，呼出目录和设置</div>}
     <header className="reader-header" inert={!tools || !!drawer}>
-      <div className="reader-header-left"><IconButton label="返回书库" icon="arrowLeft" onClick={props.onClose} /><IconButton label="目录" icon="list" onClick={() => setDrawer('toc')} /></div>
+      <div className="reader-header-left"><IconButton label="返回目录" icon="arrowLeft" onClick={props.onClose} /><IconButton label="目录" icon="list" onClick={() => setDrawer('toc')} /></div>
       <strong className="reader-header-title">{props.title}</strong>
       <div className="reader-header-actions"><IconButton label="阅读设置" icon="settings" onClick={() => setDrawer('settings')} /></div>
     </header>

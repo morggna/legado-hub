@@ -224,3 +224,71 @@ async def test_discovery_cannot_resurrect_a_removed_book(env):
         await service.add(user, ids('ab'), existing_book_id=ids('a')[0])
     assert exc.value.status_code == 404
     assert service.repository.shelf(user) == []
+
+
+@pytest.fixture
+def overview_api(env, tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+    from app.api import direct
+    service, source, user, other = env
+    current = SimpleNamespace(user_id=user)
+    monkeypatch.setattr(direct, 'auth_service', SimpleNamespace(require_user=lambda request: current))
+    monkeypatch.setattr(direct, 'direct_repository', service.repository)
+    monkeypatch.setattr(direct, 'aggregate_reading', service)
+    downloads = BookDownloadService(repository=service.repository, root=tmp_path/'downloads')
+    monkeypatch.setattr(direct, 'book_downloads', downloads)
+    app = FastAPI(); app.include_router(direct.router)
+    return AsyncClient(transport=ASGITransport(app=app),base_url='http://test'), current, downloads
+
+
+async def test_overview_catalog_only_states_lines_pagination_and_private_scope(env, overview_api):
+    service, source, user, other = env
+    client, current, downloads = overview_api
+    book = await service.add(user, ids())
+    book_id = book['bookId']; path = f'/api/direct/books/{book_id}/overview'
+    async with client:
+        first = await client.get(path, params={'pageSize':2})
+        assert first.status_code == 200
+        data = first.json()
+        assert data['chapterCount'] == 3 and len(data['chapters']) == 2
+        assert data['counts']['on_demand'] == 3
+        assert data['sources'][0]['lastChapter'] == '第三章 归来'
+        assert data['sources'][0]['status'] == 'available'
+        assert not any(c[0]=='chapter' for c in source.calls)
+        assert service.repository.download(user,book_id) is None
+        assert 'rawChapterUrl' not in first.text and 'originBookId' not in first.text
+        await service.for_user(user).chapter(book_id,1)
+        source.calls.clear()
+        cached = (await client.get(path,params={'status':'cached'})).json()
+        assert cached['total'] == 1 and cached['chapters'][0]['index'] == 1
+        assert cached['chapters'][0]['selectedSourceName']
+        assert 'content' not in cached['chapters'][0]
+        assert not source.calls
+        toc = await service.for_user(user).toc(book_id)
+        folder = downloads.directory(user,book_id); folder.mkdir(parents=True)
+        downloads.write_json(folder/'toc.json',toc)
+        downloads.write_json(folder/'chapter-0.json',{'title':'第一章 出发','content':BODY})
+        service.repository.queue_download(user,book_id)
+        service.repository.set_download(user,book_id,'failed',2,3,'请求失败')
+        mixed = (await client.get(path)).json()
+        assert mixed['counts'] == {'downloaded':1,'cached':1,'on_demand':0,'failed':1}
+        assert mixed['chapters'][2]['error'] == '请求失败'
+        assert (await client.get(path,params={'keyword':'归来','pageSize':1})).json()['total'] == 1
+        assert (await client.get(path,params={'page':2,'pageSize':2})).json()['chapters'][0]['index'] == 2
+        current.user_id = other
+        assert (await client.get(path)).status_code == 404
+        assert (await client.get(path,params={'pageSize':101})).status_code == 422
+
+
+async def test_overview_all_catalogs_unavailable_still_shows_lines_and_can_retry(env,overview_api):
+    service, source, user, _ = env
+    client, _, _ = overview_api
+    book = await service.add(user,ids())
+    source.tocs.update(a=[],b=[],c=[])
+    async with client:
+        result = (await client.get(f'/api/direct/books/{book["bookId"]}/overview')).json()
+        assert result['chapterCount'] == 0
+        assert all(s['status'] == 'unavailable' for s in result['sources'])
+        assert service.repository.aggregate_toc(user,book['bookId'])[0] is None
+        assert not any(c[0]=='chapter' for c in source.calls)

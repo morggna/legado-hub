@@ -7,6 +7,7 @@ import { LoginPage } from "@/routes/LoginPage"
 import { Dashboard } from "@/routes/Dashboard"
 import { DirectSearchPage } from "@/routes/DirectSearchPage"
 import { DirectShelfPage } from "@/routes/DirectShelfPage"
+import { DirectBookDetailPage } from "@/routes/DirectBookDetailPage"
 import { DirectReaderPage } from "@/routes/DirectReaderPage"
 import { Plugins } from "@/routes/Plugins"
 import { SearchJobs } from "@/routes/SearchJobs"
@@ -82,13 +83,14 @@ function AuthRouter() {
           <Route path="/" element={<Layout />}>
             <Route index element={<HomePage />} />
           </Route>
-          <Route path="/console/library/:bookId" element={<DirectReaderPage />} />
+          <Route path="/console/library/:bookId/read" element={<DirectReaderPage />} />
           <Route path="/console" element={<Layout />}>
             <Route index element={<Navigate to="/" replace />} />
             <Route path="search" element={<DirectSearchPage />} />
             <Route path="direct" element={<Navigate to="/console/search" replace />} />
             <Route path="direct/shelf" element={<Navigate to="/console/library" replace />} />
             <Route path="library" element={<DirectShelfPage />} />
+            <Route path="library/:bookId" element={<DirectBookDetailPage />} />
             <Route element={<AdminOnly />}>
               <Route path="plugins" element={<Plugins />} />
               <Route path="admin/search" element={<SearchJobs />} />

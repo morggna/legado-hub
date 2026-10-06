@@ -154,11 +154,12 @@ class AggregateReadingService(CandidateSelectionPolicy):
     async def _catalogs(self, book):
         sources = book.get("sources") or [book]
         async def load(source):
+            started = time.monotonic()
             try:
                 toc = await asyncio.wait_for(self.reader.toc(source["bookId"]), 20)
-                return source, toc["chapters"][:20000]
+                return {**source, "catalogStatus": "available" if toc["chapters"] else "unavailable", "latencyMs": round((time.monotonic()-started)*1000)}, toc["chapters"][:20000]
             except Exception:
-                return source, []
+                return {**source, "catalogStatus": "unavailable", "latencyMs": round((time.monotonic()-started)*1000)}, []
         return await asyncio.gather(*(load(s) for s in sources[:64]))
 
     def same_chapter(self, a, b):
@@ -210,7 +211,7 @@ class AggregateReadingService(CandidateSelectionPolicy):
                 chapters.extend(entries(source, candidates[matches[0]+1:]))
         return {"chapters": [{**c, "index": i} for i,c in enumerate(chapters[:20000])]}
 
-    async def toc(self, user_id, book_id):
+    async def toc(self, user_id, book_id, *, allow_empty=False):
         book = await self.upgrade_legacy(user_id, self.book(user_id, book_id))
         if not book or not book.get("sources"):
             return await self.reader.toc(book_id)
@@ -221,15 +222,21 @@ class AggregateReadingService(CandidateSelectionPolicy):
         try:
             async with lock:
                 previous, updated = self.repository.aggregate_toc(*key)
-                if previous and time.time()-updated < 300:
+                if previous and previous.get("chapters") and previous.get("sources") and time.time()-updated < 300:
                     return previous
                 if previous is None and book.get("legacyOrigin"):
                     # Existing single-source progress uses this exact axis.
                     previous = await self.reader.toc(book["legacyOrigin"])
                     previous["chapters"] = [{**c, "originBookId": book["legacyOrigin"]} for c in previous["chapters"]]
                 catalogs = await self._catalogs(book)
-                result = {"bookId": book_id, **self.canonical(catalogs, previous)}
-                self.repository.save_aggregate_toc(*key, result)
+                axis = {"chapters": []} if allow_empty and not previous and not any(cs for _, cs in catalogs) else self.canonical(catalogs, previous)
+                result = {"bookId": book_id, **axis, "checkedAt": time.time(),
+                          "sources": [{"sourceId": source["sourceId"], "sourceName": source["sourceName"],
+                                       "status": source.get("catalogStatus", "unknown"), "latencyMs": source.get("latencyMs"),
+                                       "chapterCount": len(chapters), "lastChapter": chapters[-1]["title"] if chapters else ""}
+                                      for source, chapters in catalogs]}
+                if result["chapters"]:
+                    self.repository.save_aggregate_toc(*key, result)
                 return result
         finally:
             _, count = self._locks[key]
@@ -330,8 +337,8 @@ class PersonalAggregateReader:
         book = self.service.book(self.user_id, book_id)
         return book or await self.service.reader.detail(book_id)
 
-    async def toc(self, book_id):
-        return await self.service.toc(self.user_id, book_id)
+    async def toc(self, book_id, *, allow_empty=False):
+        return await self.service.toc(self.user_id, book_id, allow_empty=allow_empty)
 
     async def chapter_at(self, book_id, chapter):
         return await self.service.chapter_at(self.user_id, book_id, chapter)

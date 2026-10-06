@@ -80,6 +80,14 @@ class DirectReadingRepository:
             row = conn.execute("SELECT payload_json FROM direct_aggregate_chapters WHERE user_id=? AND book_id=? AND chapter_index=?", (user_id, book_id, index)).fetchone()
         return json.loads(row[0]) if row else None
 
+    def chapter_summaries(self, user_id, book_id):
+        # Project only metadata; do not load large chapter bodies to list a TOC.
+        with self.connect() as conn:
+            rows = conn.execute("""SELECT chapter_index,
+                json_extract(payload_json, '$.title'), json_extract(payload_json, '$.aggregation')
+                FROM direct_aggregate_chapters WHERE user_id=? AND book_id=?""", (user_id, book_id)).fetchall()
+        return {row[0]: {"title": row[1], "aggregation": json.loads(row[2]) if row[2] else None} for row in rows}
+
     def save_aggregate_chapter(self, user_id, book_id, index, payload):
         import time
         with self.connect() as conn:

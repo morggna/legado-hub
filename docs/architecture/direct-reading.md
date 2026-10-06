@@ -73,3 +73,19 @@ no existing service data. Production startup follows container acceptance.
 - Covers use HTTP(S) image URLs with no-referrer and lazy loading. A named placeholder appears on failure; no arbitrary server-side image proxy is introduced.
 
 Validation includes same-book merging, homonym rejection, missing chapters, outlier voting, source failure/degradation, append-only TOCs, concurrency, old IDs/progress, private caches/downloads and zero full-book work on add. The canonical release gate remains `verify.ps1`; Docker acceptance uses the isolated SG Oracle container because the configured 本地测试 Termark asset is unavailable.
+
+## Personal book detail and chapter catalog (2026-10-07)
+
+Book covers, shelf actions and search-and-add open `/console/library/:bookId`.
+This separate detail page follows upstream Hub's metadata, source-map and chapter-state structure.
+`GET /api/direct/books/:bookId/overview` requires ownership, loads TOCs only and returns paginated,
+searchable chapter summaries with download/cache/on-demand/failure states. It projects cache metadata
+without loading chapter bodies; a frozen download TOC remains the chapter axis. Source cards show
+catalog status, chapter count, latest title and last catalog query duration. Catalog availability
+is not a claim of chapter-body availability. All failed catalogs still show their source diagnostics.
+Cached chapters expose existing aggregation audit and selected source, without doing new body checks.
+
+Selecting a chapter opens the immersive reader at `/console/library/:bookId/read?chapter=N`,
+validates the index before fetching and starts at position zero. Without an explicit chapter,
+the reader resumes saved progress. Exit returns to the catalog. Opening the detail page does
+not update progress or start a download. Full-book download remains an explicit action.
