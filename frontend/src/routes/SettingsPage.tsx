@@ -81,6 +81,7 @@ interface PrioritySourceOption {
   pluginId: string
   name: string
   official: boolean
+  origin: "builtin" | "custom"
 }
 
 function PriorityListEditor({ title, description, items, options, optionsReady = true, onChange }: { title: string; description: string; items: string[]; options: PrioritySourceOption[]; optionsReady?: boolean; onChange: (items: string[]) => void }) {
@@ -152,7 +153,7 @@ function PriorityListEditor({ title, description, items, options, optionsReady =
                 <div className="truncate font-mono text-xs text-slate-400">{item}</div>
               </div>
               <Badge variant="secondary" className="shrink-0 text-[10px]">
-                {source?.official ? "官方" : "第三方"}
+                {source?.origin === "custom" ? "自定义" : "内置"}
               </Badge>
               <div className="flex shrink-0 items-center">
                 <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label={`将${title}第 ${index + 1} 项上移`} title="上移" disabled={index === 0} onClick={() => moveItem(index, index - 1)}><ArrowUp className="h-4 w-4" /></Button>
@@ -231,6 +232,7 @@ export function SettingsPage() {
     pluginId: String(plugin.pluginId || ""),
     name: String(plugin.name || plugin.pluginId || "未知书源"),
     official: Boolean(plugin.official),
+    origin: plugin.origin ?? "builtin",
   })).filter((plugin: PrioritySourceOption) => plugin.pluginId)
 
   const setLocal = (patch: any) => {
@@ -435,8 +437,8 @@ export function SettingsPage() {
               <Input className={settingsInputClass} type="number" value={local.searchScoreFilter ?? 40} onChange={(e) => setLocal({ searchScoreFilter: +e.target.value })} />
             </SettingRow>
           </SettingsCard>
-          <SettingsCard title="网络代理与标识" description="HTTP 请求标识与代理，以及官方源是否参与普通搜索。">
-            <SettingRow title="默认 User-Agent" description="向第三方书源发起 HTTP 请求时使用的标识。">
+          <SettingsCard title="网络代理与标识" description="HTTP 请求标识与代理，以及需登录的书源是否参与普通搜索。">
+            <SettingRow title="默认 User-Agent" description="访问书源时使用的 HTTP 标识。">
               <Input className={settingsInputClass} value={sp.default_user_agent || ""} onChange={(e) => setLocal({ sourcePool: { ...sp, default_user_agent: e.target.value } })} />
             </SettingRow>
             <SettingRow title="启用网络代理" description="允许标记为强制代理的书源使用下方代理地址。">
@@ -454,7 +456,7 @@ export function SettingsPage() {
                 <span className="text-sm text-slate-600">启用</span>
               </div>
             </SettingRow>
-            <SettingRow title="官方源参与普通搜索" description="是否在常规聚合搜索中包含官方书源。">
+            <SettingRow title="需登录的书源参与普通搜索" description="是否在常规聚合搜索中包含需登录的书源。">
               <div className="flex items-center justify-end gap-2">
                 <Switch checked={sp.officialSourceInNormalSearch || false} onCheckedChange={(c) => setLocal({ sourcePool: { ...sp, officialSourceInNormalSearch: c } })} />
                 <span className="text-sm text-slate-600">启用</span>
@@ -464,7 +466,7 @@ export function SettingsPage() {
           <SettingsCard title="书源优先级" description="列表顺序就是处理顺序，排在上方的书源会被优先使用。">
             <div className="space-y-8">
               <PriorityListEditor
-                title="官方主源优先级"
+                title="认证书源优先级"
                 description="用于目录对齐和元数据抓取。"
                 items={Array.isArray(wf.primarySourcePriority) ? wf.primarySourcePriority.map(String) : []}
                 options={sourceOptions.filter((source) => source.official)}

@@ -2,6 +2,7 @@
 from contextlib import contextmanager
 import json
 import sqlite3
+import uuid
 
 from fastapi import HTTPException
 
@@ -25,8 +26,63 @@ class DirectReadingRepository:
 
     def shelf(self, user_id):
         with self.connect() as conn:
-            rows = conn.execute("SELECT metadata_json FROM direct_bookshelf WHERE user_id=? ORDER BY updated_at DESC", (user_id,)).fetchall()
-        return [json.loads(r[0]) for r in rows]
+            rows = conn.execute("""SELECT b.metadata_json, a.category_id, p.updated_at AS last_read_at,
+                    p.chapter_index, p.position, p.revision
+                FROM direct_bookshelf b
+                LEFT JOIN direct_shelf_assignments a ON a.user_id=b.user_id AND a.book_id=b.book_id
+                LEFT JOIN direct_progress p ON p.user_id=b.user_id AND p.book_id=b.book_id
+                WHERE b.user_id=?
+                ORDER BY (p.updated_at IS NOT NULL) DESC, p.updated_at DESC,
+                    b.updated_at DESC, b.book_id ASC""", (user_id,)).fetchall()
+        return [{**json.loads(r["metadata_json"]), "categoryId": r["category_id"],
+                 "lastReadAt": r["last_read_at"].replace(" ", "T") + "Z" if r["last_read_at"] else None,
+                 "progress": {"chapterIndex": r["chapter_index"], "position": r["position"],
+                              "revision": r["revision"]} if r["revision"] is not None else None}
+                for r in rows]
+
+    def categories(self, user_id):
+        with self.connect() as conn:
+            rows = conn.execute("SELECT category_id,name FROM direct_shelf_categories WHERE user_id=? ORDER BY created_at,rowid", (user_id,)).fetchall()
+        return [{"categoryId": r[0], "name": r[1]} for r in rows]
+
+    def save_category(self, user_id, name):
+        category_id = uuid.uuid4().hex
+        try:
+            with self.connect() as conn:
+                conn.execute("INSERT INTO direct_shelf_categories(user_id,category_id,name) VALUES(?,?,?)", (user_id, category_id, name))
+        except sqlite3.IntegrityError:
+            raise HTTPException(409, "已有同名分类") from None
+        return {"categoryId": category_id, "name": name}
+
+    def rename_category(self, user_id, category_id, name):
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not conn.execute("SELECT 1 FROM direct_shelf_categories WHERE user_id=? AND category_id=?", (user_id, category_id)).fetchone():
+                raise HTTPException(404, "分类不存在")
+            try:
+                conn.execute("UPDATE direct_shelf_categories SET name=? WHERE user_id=? AND category_id=?", (name, user_id, category_id))
+            except sqlite3.IntegrityError:
+                raise HTTPException(409, "已有同名分类") from None
+        return {"categoryId": category_id, "name": name}
+
+    def remove_category(self, user_id, category_id):
+        with self.connect() as conn:
+            if not conn.execute("DELETE FROM direct_shelf_categories WHERE user_id=? AND category_id=?", (user_id, category_id)).rowcount:
+                raise HTTPException(404, "分类不存在")
+
+    def categorize(self, user_id, book_id, category_id):
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not conn.execute("SELECT 1 FROM direct_bookshelf WHERE user_id=? AND book_id=?", (user_id, book_id)).fetchone():
+                raise HTTPException(404, "书籍不在书库中")
+            if category_id is None:
+                conn.execute("DELETE FROM direct_shelf_assignments WHERE user_id=? AND book_id=?", (user_id, book_id))
+            else:
+                if not conn.execute("SELECT 1 FROM direct_shelf_categories WHERE user_id=? AND category_id=?", (user_id, category_id)).fetchone():
+                    raise HTTPException(404, "分类不存在")
+                conn.execute("""INSERT INTO direct_shelf_assignments VALUES(?,?,?)
+                    ON CONFLICT(user_id,book_id) DO UPDATE SET category_id=excluded.category_id""", (user_id, book_id, category_id))
+        return {"bookId": book_id, "categoryId": category_id}
 
     def save(self, user_id, detail):
         # TOC URLs are runtime-owned and need not be returned from personal storage.
@@ -64,9 +120,9 @@ class DirectReadingRepository:
             current = row[0] if row else 0
             if current != revision:
                 raise HTTPException(409, "阅读进度已在其他页面更新，请重新载入")
-            conn.execute("""INSERT INTO direct_progress(user_id,book_id,chapter_index,position,revision) VALUES(?,?,?,?,?)
+            conn.execute("""INSERT INTO direct_progress(user_id,book_id,chapter_index,position,revision,updated_at) VALUES(?,?,?,?,?,strftime('%Y-%m-%d %H:%M:%f','now'))
                 ON CONFLICT(user_id,book_id) DO UPDATE SET chapter_index=excluded.chapter_index,position=excluded.position,
-                revision=excluded.revision,updated_at=datetime('now')""", (user_id, book_id, chapter_index, position, current + 1))
+                revision=excluded.revision,updated_at=strftime('%Y-%m-%d %H:%M:%f','now')""", (user_id, book_id, chapter_index, position, current + 1))
         return {"chapterIndex": chapter_index, "position": position, "revision": current + 1}
 
     def get(self, user_id, book_id):

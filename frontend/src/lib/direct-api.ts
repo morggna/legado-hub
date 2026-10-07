@@ -1,7 +1,7 @@
-export interface DirectBook { bookId: string; sourceId: string; sourceName: string; name: string; author: string; intro?: string; coverUrl?: string; sourceCount?: number; sourceBookIds?: string[]; sources?: DirectBook[]; attachmentSource?: boolean; imported?: boolean; threadId?: string; preferredSourceBookId?: string | null }
-export const sourceCategories = { light_novel: "轻小说", completed: "完结", ongoing: "连载中" } as const
+export interface DirectBook { bookId: string; sourceId: string; sourceName: string; name: string; author: string; intro?: string; coverUrl?: string; sourceCount?: number; sourceBookIds?: string[]; sources?: DirectBook[]; attachmentSource?: boolean; imported?: boolean; threadId?: string; preferredSourceBookId?: string | null; categoryId?: string | null; lastReadAt?: string | null; progress?: Progress | null }
+export const sourceCategories = { light_novel: "轻小说", completed: "完结", ongoing: "连载" } as const
 export type SourceCategory = keyof typeof sourceCategories
-export interface DirectSource { id: string; name: string; default?: boolean; category?: SourceCategory }
+export interface DirectSource { id: string; name: string; default?: boolean; category?: SourceCategory; origin?: "builtin" | "custom" }
 export class DirectRequestError extends Error {
   status: number
   constructor(message: string, status: number) { super(message); this.status = status }
@@ -68,3 +68,5 @@ export interface BookOverview {
 }
 export const bookDetailUrl = (id: string) => `/console/library/${encodeURIComponent(id)}`
 export const bookReaderUrl = (id: string, chapter?: number) => `${bookDetailUrl(id)}/read${chapter === undefined ? "" : `?chapter=${chapter}`}`
+
+export interface ShelfCategory { categoryId: string; name: string }

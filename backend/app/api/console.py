@@ -29,6 +29,7 @@ from app.services.live_check_repository import LiveCheckRepository
 from app.services.update_scheduler import UpdateScheduler
 from app.services.cache import Cache
 from app.services.source_ping import SourcePingService
+from app.services.attachment_plugin import management_plugins, management_ping_scheduler
 from app.services.login_browser_service import login_browser_service
 from app.services.official_auth.manager import official_auth_manager
 from app.services.aggregate_processor import AggregateProcessor
@@ -39,6 +40,7 @@ from app.services.library_books import library_books_service
 from app.services.shared_book_lock import SharedBookLockService
 from app.services.shared_book_scheduler import SharedBookScheduler
 from app.services.shared_book_storage import TRACE_BEGIN
+from app.source_plugins.catalog import source_origin, source_category
 from app.source_plugins.loader import PluginLoader
 from app.source_plugins.scheduler import PluginScheduler, get_plugin_scheduler
 from app.source_plugins.id_codec import encode_chapter_id
@@ -1102,16 +1104,19 @@ def _plugin_health(plugin_id: str) -> dict:
 
 @console_route("get", "/plugins")
 def list_plugins():
-    plugins = _plugin_scheduler._plugins
+    plugins = management_plugins(_plugin_scheduler)
     return {
         "items": [
             {
                 "pluginId": p.metadata.id,
+                "attachmentSource": p.metadata.id == "txtnovel_vip",
                 "name": p.metadata.name,
                 "author": p.metadata.author,
                 "version": p.metadata.version,
                 "enabled": p.metadata.enabled,
                 "official": p.metadata.is_official_source(),
+                "origin": source_origin(p.metadata.id),
+                "category": source_category(p.metadata),
                 "capabilities": p.capabilities,
                 "domains": p.metadata.domains,
                 "tags": p.metadata.tags,
@@ -1190,25 +1195,30 @@ async def list_official_sources(request: Request):
             "lastModified": _plugin_last_modified(plugin),
             "browser": plugin.metadata.browser,
             "official": plugin.metadata.is_official_source(),
+            "origin": source_origin(plugin.metadata.id),
+            "category": source_category(plugin.metadata),
             "hasCookies": has_cookies,
             "authStatus": auth_status,
         })
-    items.sort(key=lambda item: (not item["official"], item["name"], item["pluginId"]))
+    items.sort(key=lambda item: (item["origin"] != "builtin", item["name"], item["pluginId"]))
     return {"items": items, "total": len(items)}
 
 
 @console_route("get", "/plugins/{plugin_id}")
 def get_plugin(plugin_id: str):
-    plugin = _plugin_scheduler._plugins.get(plugin_id)
+    plugin = management_plugins(_plugin_scheduler).get(plugin_id)
     if not plugin:
         raise HTTPException(status_code=404, detail="插件不存在")
     return {
         "pluginId": plugin.metadata.id,
+        "attachmentSource": plugin.metadata.id == "txtnovel_vip",
         "name": plugin.metadata.name,
         "author": plugin.metadata.author,
         "version": plugin.metadata.version,
         "enabled": plugin.metadata.enabled,
         "official": plugin.metadata.is_official_source(),
+        "origin": source_origin(plugin.metadata.id),
+        "category": source_category(plugin.metadata),
         "capabilities": plugin.capabilities,
         "domains": plugin.metadata.domains,
         "baseUrls": plugin.metadata.base_urls,
@@ -1230,7 +1240,7 @@ def get_plugin(plugin_id: str):
 
 @console_route("get", "/plugins/{plugin_id}/attempts")
 def get_plugin_attempts(plugin_id: str, limit: int = 20):
-    plugin = _plugin_scheduler._plugins.get(plugin_id)
+    plugin = management_plugins(_plugin_scheduler).get(plugin_id)
     if not plugin:
         raise HTTPException(status_code=404, detail="插件不存在")
     from app.services.plugin_runtime_state import get_runtime_state
@@ -1242,12 +1252,12 @@ def get_plugin_attempts(plugin_id: str, limit: int = 20):
 @console_route("post", "/plugins/reload")
 def reload_plugins():
     _plugin_scheduler.reload()
-    return {"reloaded": True, "count": len(_plugin_scheduler._plugins)}
+    return {"reloaded": True, "count": len(management_plugins(_plugin_scheduler))}
 
 
 @console_route("post", "/plugins/{plugin_id}/enable")
 def enable_plugin(plugin_id: str, payload: dict):
-    plugin = _plugin_scheduler._plugins.get(plugin_id)
+    plugin = management_plugins(_plugin_scheduler).get(plugin_id)
     if not plugin:
         raise HTTPException(status_code=404, detail="插件不存在")
     enabled = payload.get("enabled", True)
@@ -1263,7 +1273,7 @@ def batch_enable_plugins(payload: dict):
     cfg = AppConfig.get()
     results = []
     for plugin_id in plugin_ids:
-        plugin = _plugin_scheduler._plugins.get(plugin_id)
+        plugin = management_plugins(_plugin_scheduler).get(plugin_id)
         if plugin:
             plugin.metadata.enabled = enabled
             cfg.set_plugin_enabled(plugin_id, enabled)
@@ -1278,17 +1288,17 @@ async def ping_all_plugins(payload: dict | None = None):
     payload = payload or {}
     plugin_ids = payload.get("pluginIds")
     if plugin_ids:
-        plugin_ids = [pid for pid in plugin_ids if pid in _plugin_scheduler._plugins]
-    service = SourcePingService(scheduler=_plugin_scheduler)
+        plugin_ids = [pid for pid in plugin_ids if pid in management_plugins(_plugin_scheduler)]
+    service = SourcePingService(scheduler=management_ping_scheduler(_plugin_scheduler))
     results = await service.ping_all(plugin_ids)
     return {"results": results}
 
 
 @console_route("post", "/plugins/{plugin_id}/ping")
 async def ping_one_plugin(plugin_id: str):
-    if plugin_id not in _plugin_scheduler._plugins:
+    if plugin_id not in management_plugins(_plugin_scheduler):
         raise HTTPException(status_code=404, detail="插件不存在")
-    service = SourcePingService(scheduler=_plugin_scheduler)
+    service = SourcePingService(scheduler=management_ping_scheduler(_plugin_scheduler))
     result = await service.ping_one(plugin_id)
     return result
 
@@ -1661,6 +1671,8 @@ def list_sources(
             "version": plugin.metadata.version,
             "enabled": plugin.metadata.enabled,
             "official": plugin.metadata.is_official_source(),
+            "origin": source_origin(plugin.metadata.id),
+            "category": source_category(plugin.metadata),
             "capabilities": plugin.capabilities,
             "domains": plugin.metadata.domains,
             "baseUrls": plugin.metadata.base_urls,
@@ -1693,6 +1705,8 @@ def get_source(source_id: str):
             "version": plugin.metadata.version,
             "enabled": plugin.metadata.enabled,
             "official": plugin.metadata.is_official_source(),
+            "origin": source_origin(plugin.metadata.id),
+            "category": source_category(plugin.metadata),
             "capabilities": plugin.capabilities,
             "domains": plugin.metadata.domains,
             "baseUrls": plugin.metadata.base_urls,

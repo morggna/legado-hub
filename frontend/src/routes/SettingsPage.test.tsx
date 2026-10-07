@@ -172,11 +172,11 @@ describe("SettingsPage subscription policy", () => {
     renderPage()
 
     await user.click(await screen.findByRole("tab", { name: "书源" }))
-    const moveButton = screen.getByRole("button", { name: "将官方主源优先级第 1 项下移" })
+    const moveButton = screen.getByRole("button", { name: "将认证书源优先级第 1 项下移" })
     await user.click(moveButton)
-    await waitFor(() => expect(screen.getByLabelText("官方主源优先级第 2 项")).toHaveFocus())
-    expect(screen.getByLabelText("官方主源优先级第 2 项")).toHaveTextContent("qidian_com_app")
-    expect(screen.queryByRole("textbox", { name: "官方主源优先级第 2 项" })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByLabelText("认证书源优先级第 2 项")).toHaveFocus())
+    expect(screen.getByLabelText("认证书源优先级第 2 项")).toHaveTextContent("qidian_com_app")
+    expect(screen.queryByRole("textbox", { name: "认证书源优先级第 2 项" })).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "保存配置" }))
 
     await waitFor(() => expect(api.updateAggregateSettings).toHaveBeenCalledTimes(1))

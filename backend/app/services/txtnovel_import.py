@@ -20,6 +20,7 @@ from Crypto.Cipher import AES
 from fastapi import HTTPException
 
 from app import config
+from app.core.app_config import AppConfig
 from app.services.local_book_import import import_book
 from app.services.text_convert import to_simplified
 
@@ -146,9 +147,17 @@ class TxtNovelImportService:
         self._last_request = 0
         self._search_pages = {}
 
+    @property
+    def enabled(self):
+        return AppConfig.get().is_plugin_enabled(SOURCE_ID, default=True)
+
+    def require_enabled(self):
+        if not self.enabled:
+            raise HTTPException(400, "书香门第插件已停用")
+
     def status(self, user_id):
         session = self.store.read(user_id)
-        return {'bound': bool(session), 'username': session['username'] if session else None}
+        return {'bound': bool(session), 'username': session['username'] if session else None, 'enabled': self.enabled}
 
     def client(self, session=None):
         client = httpx.AsyncClient(timeout=30, follow_redirects=False, transport=self.transport,
@@ -186,6 +195,7 @@ class TxtNovelImportService:
         return bool(document.select_one('a[href*="action=logout"]'))
 
     async def login(self, user_id, username, password):
+        self.require_enabled()
         async with self.client() as client:
             document = soup(await self.request(client, 'GET', BASE))
             form = document.select_one('#lsform')
@@ -207,6 +217,7 @@ class TxtNovelImportService:
             return self.status(user_id)
 
     def session(self, user_id):
+        self.require_enabled()
         session = self.store.read(user_id)
         if not session:
             raise HTTPException(409, "请先绑定书香门第账号")
@@ -277,6 +288,7 @@ class TxtNovelImportService:
             return detail
 
     async def download(self, user_id, token):
+        self.require_enabled()
         quote = self.verify(token, user_id)
         receipt = self.store.root / ('receipt-' + quote['nonce'] + '.json')
         raw_file = self.store.root / ('attachment-' + quote['nonce'] + '.bin')

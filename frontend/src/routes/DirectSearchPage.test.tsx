@@ -16,12 +16,15 @@ it('replaces cumulative search groups and saves every candidate in one shelf ent
     if(url.startsWith('/api/direct/search?')) return new Response(
       `data: ${JSON.stringify({sourceId:'a',items:[],groups:[{...book,sourceCount:1,sourceBookIds:['a:one']}],latencyMs:100})}\n\n`+
       `data: ${JSON.stringify({sourceId:'b',items:[],groups:[book],latencyMs:200})}\n\nevent: done\ndata: {}\n\n`)
-    if(url.endsWith('/sources')) return Response.json({items:[{id:'a',name:'甲源',category:'light_novel'},{id:'b',name:'乙源',category:'light_novel'}]})
+    if(url.endsWith('/sources')) return Response.json({items:[{id:'a',name:'甲源',category:'light_novel',origin:'custom'},{id:'b',name:'乙源',category:'light_novel'}]})
     if(init?.method === 'POST') return Response.json(book)
     return Response.json({items:[]})
   })
   vi.stubGlobal('fetch',fetcher); mount(<DirectSearchPage />)
   await screen.findByText('甲源')
+  expect(screen.queryByRole('group',{name:'书源类型'})).toBeNull()
+  expect(screen.queryByRole('button',{name:'内置'})).toBeNull()
+  expect(screen.queryByRole('button',{name:'自定义'})).toBeNull()
   fireEvent.change(screen.getByRole('textbox',{name:'书名或作者'}),{target:{value:'三国演义'}})
   fireEvent.click(screen.getByRole('button',{name:'搜索'}))
   await screen.findByText('2 个来源 · 聚合阅读')
@@ -41,9 +44,9 @@ it('renders shelf covers with a readable fallback for failed image hosts', async
   expect(screen.getByRole('button',{name:'整本下载'})).toBeVisible()
 })
 
-it('switches the three source categories and searches only the selected category', async () => {
+it('switches completion categories and searches only the selected source group', async () => {
   const fetcher = vi.fn(async (url: string) => {
-    if (url.endsWith('/sources')) return Response.json({items:[{id:'light',name:'轻小说文库',category:'light_novel'},{id:'full',name:'全本源',category:'completed'},{id:'serial',name:'连载源',category:'ongoing'}]})
+    if (url.endsWith('/sources')) return Response.json({items:[{id:'light',name:'轻小说文库',category:'light_novel',origin:'custom'},{id:'full',name:'全本源',category:'completed'},{id:'serial',name:'连载源',category:'ongoing'}]})
     if (url.includes('/search?')) return new Response('event: done\ndata: {}\n\n')
     return Response.json({items:[]})
   })
@@ -55,6 +58,6 @@ it('switches the three source categories and searches only the selected category
   fireEvent.change(screen.getByRole('textbox', {name:'书名或作者'}), {target:{value:'测试'}})
   fireEvent.click(screen.getByRole('button', {name:'搜索'}))
   await waitFor(() => expect(fetcher.mock.calls.some(([url]) => url.includes('/search?') && new URL(url, 'https://example.com').searchParams.get('sources') === 'full')).toBe(true))
-  fireEvent.click(screen.getByRole('button', {name:/^连载中/}))
+  fireEvent.click(screen.getByRole('button', {name:/^连载/}))
   await screen.findByText('连载源')
 })

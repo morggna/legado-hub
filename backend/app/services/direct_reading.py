@@ -11,6 +11,7 @@ from urllib.parse import urlsplit, urljoin
 
 from fastapi import HTTPException
 
+from app.source_plugins.catalog import source_origin, source_category
 from app.source_plugins.id_codec import decode_book_id, encode_book_id
 from app.source_plugins.scheduler import get_plugin_scheduler
 
@@ -34,22 +35,12 @@ class DirectReadingService:
                 and meta.content.get("access") == "free"
                 and {"search", "detail", "toc", "chapter"}.issubset(plugin.capabilities))
 
-    @staticmethod
-    def source_category(meta):
-        tags = set(getattr(meta, "tags", []) or [])
-        configured = meta.content.get("category")
-        if configured in {"light_novel", "completed", "ongoing"}:
-            return configured
-        if "light-novel" in tags:
-            return "light_novel"
-        if "completed" in tags or meta.id in {"quanben5_com", "yeban360_com", "aishu99_com", "aiqu654_com"}:
-            return "completed"
-        return "ongoing"
+    source_category = staticmethod(source_category)
 
     def sources(self):
         return sorted([
             {"id": p.metadata.id, "name": p.metadata.name,
-             "category": self.source_category(p.metadata),
+             "category": self.source_category(p.metadata), "origin": source_origin(p.metadata.id),
              "default": p.metadata.id in os.getenv("LEGADOHUB_DIRECT_DEFAULT_SOURCES", "").split(",")}
             for p in self.scheduler._plugins.values() if self.eligible(p)
         ], key=lambda p: p["name"])

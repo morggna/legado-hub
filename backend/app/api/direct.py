@@ -32,8 +32,8 @@ class ProgressRequest(BaseModel):
 def sources(request: Request):
     user = auth_service.require_user(request)
     items = direct_reading.sources()
-    if txtnovel_import.status(user.user_id)["bound"]:
-        items.append({"id": SOURCE_ID, "name": SOURCE_NAME, "attachmentSource": True, "category": "completed"})
+    if txtnovel_import.enabled and txtnovel_import.status(user.user_id)["bound"]:
+        items.append({"id": SOURCE_ID, "name": SOURCE_NAME, "attachmentSource": True, "category": "completed", "origin": "custom"})
     return {"items": items}
 
 
@@ -188,6 +188,47 @@ async def chapter(book_id: str, index: int, request: Request):
 def shelf(request: Request):
     user = auth_service.require_user(request)
     return {"items": direct_repository.shelf(user.user_id)}
+
+
+class ShelfCategoryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    name: str = Field(min_length=1, max_length=40)
+
+
+class ShelfAssignmentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    categoryId: str | None = Field(default=None, max_length=64)
+
+
+@router.get("/shelf/categories")
+def shelf_categories(request: Request):
+    user = auth_service.require_user(request)
+    return {"items": direct_repository.categories(user.user_id)}
+
+
+@router.post("/shelf/categories")
+def create_shelf_category(payload: ShelfCategoryRequest, request: Request):
+    user = auth_service.require_user(request)
+    return direct_repository.save_category(user.user_id, payload.name)
+
+
+@router.patch("/shelf/categories/{category_id}")
+def rename_shelf_category(category_id: str, payload: ShelfCategoryRequest, request: Request):
+    user = auth_service.require_user(request)
+    return direct_repository.rename_category(user.user_id, category_id, payload.name)
+
+
+@router.delete("/shelf/categories/{category_id}")
+def delete_shelf_category(category_id: str, request: Request):
+    user = auth_service.require_user(request)
+    direct_repository.remove_category(user.user_id, category_id)
+    return {"ok": True}
+
+
+@router.patch("/shelf/{book_id}/category")
+def assign_shelf_category(book_id: str, payload: ShelfAssignmentRequest, request: Request):
+    user = auth_service.require_user(request)
+    return direct_repository.categorize(user.user_id, book_id, payload.categoryId)
 
 
 class AggregateAddRequest(BaseModel):

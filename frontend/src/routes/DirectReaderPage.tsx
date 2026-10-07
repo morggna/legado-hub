@@ -51,10 +51,11 @@ function Reader({ bookId, initial, entryIndex }: { bookId: string; initial: Prog
         client.setQueryData(["direct", "progress", bookId], remote)
       }
       void client.invalidateQueries({ queryKey: ["direct", "overview", bookId] })
+      void client.invalidateQueries({ queryKey: ["direct", "shelf"] })
     })
     const flush = () => {
       if (timer.current) clearTimeout(timer.current)
-      void sync.flush()
+      void sync.flush().then(() => client.invalidateQueries({ queryKey: ["direct", "shelf"] }))
     }
     const resumeSync = () => { if (document.visibilityState !== "hidden") void sync.reconcile() }
     const visibility = () => { if (document.visibilityState === "hidden") flush(); else resumeSync() }
@@ -75,11 +76,11 @@ function Reader({ bookId, initial, entryIndex }: { bookId: string; initial: Prog
     }
   }, [sync, client, bookId, entryIndex])
   useEffect(() => {
-    if (entryIndex !== undefined && index === entryIndex && chapter.data && validIndex && !entrySaved.current) {
+    if (chapter.data && validIndex && !entrySaved.current) {
       entrySaved.current = true
-      save({ chapterIndex: entryIndex, position: 0 })
+      save({ chapterIndex: index, position: entryIndex === undefined ? initial.position : 0 })
     }
-  }, [entryIndex, index, chapter.data, validIndex, save])
+  }, [entryIndex, initial.position, index, chapter.data, validIndex, save])
   const changeChapter = useCallback((next: number, position = 0) => {
     entrySaved.current = true
     if (timer.current) clearTimeout(timer.current)

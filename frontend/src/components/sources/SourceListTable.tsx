@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
-const CAPABILITY_LABELS: Record<string, string> = { search: "搜索", detail: "详情", toc: "目录", chapter: "正文", content: "正文", chapter_reviews: "章评", explore: "发现", auth: "登录" }
+const CAPABILITY_LABELS: Record<string, string> = { search: "搜索", detail: "详情", toc: "目录", chapter: "正文", content: "正文", chapter_reviews: "章评", explore: "发现", full_book: "整本下载", auth: "登录" }
 const CAPABILITY_COLORS: Record<string, string> = {
   search: "bg-blue-50 text-blue-600",
   detail: "bg-emerald-50 text-emerald-600",
@@ -14,6 +14,7 @@ const CAPABILITY_COLORS: Record<string, string> = {
   chapter_reviews: "bg-slate-100 text-slate-600",
   explore: "bg-cyan-50 text-cyan-600",
   auth: "bg-rose-50 text-rose-600",
+  full_book: "bg-amber-50 text-amber-600",
 }
 
 function sourceLatency(source: any) {
@@ -127,6 +128,7 @@ export function SourceListTable({
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="text-sm font-semibold text-slate-900">{source.name}</span>
+                            {source.category && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">{source.category === "light_novel" ? "轻小说" : source.category === "completed" ? "完结" : "连载"}</span>}
                             {(source.accessType || source.sourceType) === "Browser" && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[9px] font-medium text-blue-700">Browser</span>}
                           </div>
                           <div className="mt-1 space-y-0.5 text-[10px] text-slate-400">

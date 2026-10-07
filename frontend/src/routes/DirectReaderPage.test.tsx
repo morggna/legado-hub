@@ -24,11 +24,12 @@ function mount(entry = "/books/test") {
   vi.stubGlobal('fetch', fetcher)
   const client = new QueryClient({defaultOptions: {queries: {retry:false}}})
   render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[entry]}><Routes><Route path="/books/:bookId" element={<DirectReaderPage />} /><Route path="/console/library/:bookId" element={<p>目录页面</p>} /></Routes></MemoryRouter></QueryClientProvider>)
-  return fetcher
+  return Object.assign(fetcher, {client})
 }
 it('fetches only the current chapter; navigating reads one new chapter without starting a download', async () => {
   const fetcher = mount()
   await screen.findByText('首章内容')
+  await waitFor(() => expect(fetcher.mock.calls.some(([url,init]) => url.endsWith('/progress') && init?.method === 'PUT' && JSON.parse(String(init.body)).chapterIndex === 0)).toBe(true))
   fireEvent.keyDown(window, {key: 'Escape'})
   expect(fetcher.mock.calls.filter(([url]) => url.includes('/chapters/')).map(([url]) => url)).toEqual(['/api/direct/books/test/chapters/0'])
   fireEvent.click(screen.getByRole('button', {name:'下一章'}))
@@ -89,4 +90,22 @@ it('adopts another device’s saved chapter after focus instead of remaining at 
   fetcher.mockImplementation(async (url: string) => Response.json(url.endsWith('/progress') ? {chapterIndex:1,position:.6,revision:3} : url.includes('/chapters/1') ? {title:'第二章',content:'次章内容'} : {}))
   fireEvent.focus(window)
   await screen.findByText('次章内容')
+})
+
+
+it('refreshes shelf order after the final progress save completes following reader exit', async () => {
+  const fetcher = mount('/books/test?chapter=1')
+  const original = fetcher.getMockImplementation()!
+  let finish: ((value: Response) => void) | undefined
+  fetcher.mockImplementation((url: string, init?: RequestInit) => url.endsWith('/progress') && init?.method === 'PUT'
+    ? new Promise<Response>(resolve => { finish = resolve }) : original(url, init))
+  const invalidate = vi.spyOn(fetcher.client, 'invalidateQueries')
+  await screen.findByText('次章内容')
+  await waitFor(() => expect(finish).toBeDefined())
+  fireEvent.keyDown(window, {key:'Escape'})
+  invalidate.mockClear()
+  fireEvent.click(screen.getByRole('button',{name:'返回目录'}))
+  await screen.findByText('目录页面')
+  finish!(Response.json({chapterIndex:1,position:0,revision:1}))
+  await waitFor(() => expect(invalidate).toHaveBeenCalledWith({queryKey:['direct','shelf']}))
 })

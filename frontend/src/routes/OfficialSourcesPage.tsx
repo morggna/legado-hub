@@ -7,13 +7,21 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { TableCell, TableHead } from "@/components/ui/table"
 import { OfficialSourceLoginDialog } from "@/components/auth/OfficialSourceLoginDialog"
+import { TxtNovelAccount, txtNovelPath } from "@/components/TxtNovelAccount"
+import { directRequest } from "@/lib/direct-api"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { SourceListTable } from "@/components/sources/SourceListTable"
 
 const TERMINAL_LOGIN_STATUSES = new Set(["success", "pending", "failed", "timeout", "cancelled", "none"])
 export const BROWSER_LOGIN_TIMEOUT_MS = 5 * 60 * 1000
 const BROWSER_LOGIN_POLL_INTERVAL_MS = 3000
 
+const needsLogin = (item: any) => !item.attachmentSource && (item.capabilities?.includes("auth") || (item.auth?.mode && item.auth.mode !== "none"))
+
 interface OfficialSourcesPageProps {
+  includeAll?: boolean
+  listLoading?: boolean
+  title?: string
   basePlugins?: any[]
   headerTabs?: ReactNode
   batchToolbar?: ReactNode
@@ -24,6 +32,9 @@ interface OfficialSourcesPageProps {
 }
 
 export function OfficialSourcesPage({
+  includeAll = false,
+  listLoading = false,
+  title = "书源列表",
   basePlugins = [],
   headerTabs,
   batchToolbar,
@@ -33,7 +44,9 @@ export function OfficialSourcesPage({
   onToggleSelected,
 }: OfficialSourcesPageProps) {
   const queryClient = useQueryClient()
-  const { data, isLoading, error: queryError, refetch } = useQuery({ queryKey: ["official-sources"], queryFn: api.officialSources, refetchInterval: 5000 })
+  const { data, isLoading, error: queryError, refetch } = useQuery({ queryKey: ["official-sources"], queryFn: api.officialSources, refetchInterval: 5000, enabled: !includeAll || basePlugins.some(needsLogin) })
+  const [attachmentAccountOpen, setAttachmentAccountOpen] = useState(false)
+  const attachmentAccount = useQuery({queryKey: ["direct", "txtnovel", "account"], queryFn: () => directRequest<{bound: boolean; username: string | null; enabled: boolean}>(`${txtNovelPath}/account`), enabled: basePlugins.some(p => p.attachmentSource), retry: false})
   const [loginSession, setLoginSession] = useState<any>(null)
   const [loginDialogOpen, setLoginDialogOpen] = useState(false)
   const [selectedPlugin, setSelectedPlugin] = useState<{ id: string; name: string } | null>(null)
@@ -52,7 +65,7 @@ export function OfficialSourcesPage({
     mutationFn: (pluginIds: string[]) => Promise.all(pluginIds.map(api.pluginAuthCheck)),
     onMutate: () => setOperationError(""),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["official-sources"] }),
-    onError: () => setOperationError("官方源登录状态刷新失败，请稍后重试。"),
+    onError: () => setOperationError("书源登录状态刷新失败，请稍后重试。"),
   })
   const logoutMutation = useMutation({
     mutationFn: ({ pluginId }: { pluginId: string; name: string }) => api.loginLogout(pluginId),
@@ -194,7 +207,9 @@ export function OfficialSourcesPage({
   }, [loginSession?.attemptId, loginSession?.deadlineAt, loginSession?.pluginId, loginSession?.polling, queryClient])
 
   const basePluginById = new Map(basePlugins.map((plugin: any) => [plugin.pluginId, plugin]))
-  const items = (data?.items || []).map((item: any) => ({ ...item, ...(basePluginById.get(item.pluginId) || {}), authStatus: item.authStatus }))
+  const authById = new Map((data?.items || []).map((item: any) => [item.pluginId, item]))
+  const items = includeAll ? basePlugins.map((item: any) => ({ ...item, authStatus: (authById.get(item.pluginId) as any)?.authStatus })) : (data?.items || []).map((item: any) => ({ ...item, ...(basePluginById.get(item.pluginId) || {}), authStatus: item.authStatus }))
+  const authItems = includeAll ? items.filter(needsLogin) : items
   const browserLoginBusy = Boolean(loginSession?.polling) || cancelLoginMutation.isPending
   const confirmLogout = (item: any) => {
     if (window.confirm(`确定注销 ${item.name}？已保存的登录状态将被清除。`)) {
@@ -210,8 +225,8 @@ export function OfficialSourcesPage({
     <Button
       variant="outline"
       aria-busy={globalRefreshMutation.isPending}
-      disabled={isLoading || Boolean(queryError) || globalRefreshMutation.isPending || refreshMutation.isPending || items.length === 0}
-      onClick={() => globalRefreshMutation.mutate(items.map((item: any) => item.pluginId))}
+      disabled={isLoading || Boolean(queryError) || globalRefreshMutation.isPending || refreshMutation.isPending || authItems.length === 0}
+      onClick={() => globalRefreshMutation.mutate(authItems.map((item: any) => item.pluginId))}
     >
       <RefreshCw className={`h-4 w-4 mr-2 ${globalRefreshMutation.isPending ? "animate-spin" : ""}`} />
       {globalRefreshMutation.isPending ? "刷新中..." : "全局刷新状态"}
@@ -233,12 +248,12 @@ export function OfficialSourcesPage({
   const listPlaceholder = (
     <SourceListTable
       items={[]}
-      title="官方源列表"
+      title={title}
       description="在统一书源信息上管理账号认证与登录状态。"
-      emptyMessage="暂无已配置的官方源"
+      emptyMessage="暂无书源。"
       headerTabs={headerTabs}
       toolbar={listToolbar}
-      loading={isLoading}
+      loading={includeAll ? listLoading : isLoading}
       selectable={selectable}
       selectedIds={selectedIds}
       selectionDisabled={selectionDisabled}
@@ -255,7 +270,7 @@ export function OfficialSourcesPage({
       {queryError && (
         <div role="alert" className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span className="flex-1">官方源加载失败：{apiErrorMessage(queryError, "请稍后重试。")}</span>
+          <span className="flex-1">书源登录状态加载失败：{apiErrorMessage(queryError, "请稍后重试。")}</span>
           <Button type="button" size="sm" variant="outline" onClick={() => { void refetch() }}>重试</Button>
         </div>
       )}
@@ -267,7 +282,7 @@ export function OfficialSourcesPage({
         </div>
       )}
 
-      {isLoading ? listPlaceholder : !queryError && (
+      {(includeAll ? listLoading : isLoading) ? listPlaceholder : (!queryError || includeAll) && (
         <>
       {loginSession && (
         <Card className={loginSession.polling ? "border-blue-300 bg-blue-50/30" : ""}>
@@ -284,9 +299,9 @@ export function OfficialSourcesPage({
 
       <SourceListTable
         items={items}
-        title="官方源列表"
+        title={title}
         description="在统一书源信息上管理账号认证与登录状态。"
-        emptyMessage="暂无已配置的官方源"
+        emptyMessage="暂无书源。"
         headerTabs={headerTabs}
         toolbar={listToolbar}
         selectable={selectable}
@@ -298,6 +313,8 @@ export function OfficialSourcesPage({
         extraColumnCount={2}
         extraHeaders={authHeaders}
         renderExtraCells={(item: any) => {
+          if (item.attachmentSource) return <><TableCell className="text-center">{attachmentAccount.error ? <span className="text-xs text-red-600">状态加载失败</span> : attachmentAccount.isPending ? <span className="text-xs text-slate-400">加载中…</span> : <Badge variant={attachmentAccount.data?.bound ? "success" : "secondary"}>{attachmentAccount.data?.username || "未绑定"}</Badge>}</TableCell><TableCell className="text-center"><Button size="sm" variant="outline" onClick={() => setAttachmentAccountOpen(true)}>管理账号</Button></TableCell></>
+          if (includeAll && !needsLogin(item)) return <><TableCell className="text-center text-xs text-slate-400">无需登录</TableCell><TableCell className="text-center text-slate-400">—</TableCell></>
           const auth = item.authStatus || {}
           const isCurrentSession = loginSession?.pluginId === item.pluginId
           const isRefreshing = refreshMutation.isPending && refreshMutation.variables?.pluginId === item.pluginId
@@ -338,8 +355,9 @@ export function OfficialSourcesPage({
         </>
       )}
 
-      {queryError && listPlaceholder}
+      {queryError && !includeAll && listPlaceholder}
 
+      <Dialog open={attachmentAccountOpen} onOpenChange={setAttachmentAccountOpen}><DialogContent><DialogHeader><DialogTitle>书香门第账号管理</DialogTitle><DialogDescription>绑定或解除当前用户的个人账号。</DialogDescription></DialogHeader><TxtNovelAccount /></DialogContent></Dialog>
       {selectedPlugin && loginDialogOpen && (
         <OfficialSourceLoginDialog key={selectedPlugin.id} pluginId={selectedPlugin.id} sourceName={selectedPlugin.name} open={loginDialogOpen} onOpenChange={setLoginDialogOpen}
           onSuccess={() => { queryClient.invalidateQueries({ queryKey: ["official-sources"] }) }} />

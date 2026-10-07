@@ -229,7 +229,7 @@ async def test_aggregate_shelf_api_and_personal_ownership(app_env):
         assert (await b.post(f"/api/direct/books/{book['bookId']}/download")).status_code == 404
 
 
-def test_source_categories_prioritize_metadata_and_light_novel_tag(app_env):
+def test_source_categories_use_builtin_inventory_and_custom_metadata(app_env):
     reader, fake = app_env[2], app_env[4]
     meta = fake._plugins['fixture'].metadata
     assert reader.sources()[0]['category'] == 'ongoing'
@@ -237,3 +237,85 @@ def test_source_categories_prioritize_metadata_and_light_novel_tag(app_env):
     assert reader.sources()[0]['category'] == 'light_novel'
     meta.content['category'] = 'completed'
     assert reader.sources()[0]['category'] == 'completed'
+    from app.source_plugins.catalog import BUILTIN_SOURCE_IDS, source_origin
+    meta.tags = []
+    for source_id in BUILTIN_SOURCE_IDS:
+        meta.id = source_id
+        expected = 'completed' if source_id in {'quanben5_com', 'txtnovel_vip'} else 'light_novel' if source_id in {'wenku8_net', 'linovelib_com'} else 'ongoing'
+        assert reader.source_category(meta) == expected
+        assert source_origin(source_id) == 'builtin'
+    for source_id, category in [('wenku8_net', 'light_novel'), ('linovelib_com', 'light_novel'), ('txtnovel_vip', 'completed')]:
+        meta.id = source_id
+        assert source_origin(source_id) == 'custom'
+        assert reader.source_category(meta) == category
+    assert source_origin('user_custom') == 'custom'
+
+
+async def test_custom_shelf_categories_persist_and_isolate_users(app_env):
+    app, _, reader, repo, _, a, b = app_env
+    ca, cb = await client(app, "readerA"), await client(app, "readerB")
+    async with ca, cb:
+        await ca.put(f"/api/direct/shelf/{BOOK}")
+        assert (await ca.post("/api/direct/shelf/categories", json={"name": "  "})).status_code == 422
+        category = (await ca.post("/api/direct/shelf/categories", json={"name": "  想读  "})).json()
+        cid = category["categoryId"]
+        assert category["name"] == "想读"
+        assert (await ca.post("/api/direct/shelf/categories", json={"name": "想读"})).status_code == 409
+        assert (await cb.get("/api/direct/shelf/categories")).json()["items"] == []
+        assert (await cb.post("/api/direct/shelf/categories", json={"name": "想读"})).status_code == 200
+        for method, body in [("PATCH", {"name": "别人的分类"}), ("DELETE", None)]:
+            assert (await cb.request(method, f"/api/direct/shelf/categories/{cid}", json=body)).status_code == 404
+        assert (await cb.patch(f"/api/direct/shelf/{BOOK}/category", json={"categoryId": cid})).status_code == 404
+        assert (await ca.patch(f"/api/direct/shelf/{BOOK}/category", json={"categoryId": cid})).status_code == 200
+        await ca.patch(f"/api/direct/shelf/categories/{cid}", json={"name": "正在读"})
+        reopened = DirectReadingRepository(repo.db_path)
+        assert reopened.categories(a["userId"])[0]["name"] == "正在读"
+        assert reopened.shelf(a["userId"])[0]["categoryId"] == cid
+        # Metadata refresh must preserve classification.
+        repo.save(a["userId"], await reader.detail(BOOK))
+        assert repo.shelf(a["userId"])[0]["categoryId"] == cid
+        # A user's own book cannot be assigned to someone else's category.
+        repo.save(b["userId"], await reader.detail(BOOK))
+        assert (await cb.patch(f"/api/direct/shelf/{BOOK}/category", json={"categoryId": cid})).status_code == 404
+        assert (await ca.patch(f"/api/direct/shelf/{BOOK}/category", json={"categoryId": None})).status_code == 200
+        assert repo.shelf(a["userId"])[0]["categoryId"] is None
+        await ca.patch(f"/api/direct/shelf/{BOOK}/category", json={"categoryId": cid})
+        await ca.delete(f"/api/direct/shelf/categories/{cid}")
+        assert repo.shelf(a["userId"])[0]["categoryId"] is None
+        assert repo.get(a["userId"], BOOK) is not None
+
+
+def test_shelf_sorts_by_personal_reading_time_not_metadata_updates(app_env):
+    repo, a, b = app_env[3], app_env[5], app_env[6]
+    uid = a["userId"]
+    for bid in ["read-first", "read-last", "never-read"]:
+        repo.save(uid, {"bookId": bid, "name": bid})
+    repo.update_progress(uid, "read-first", 1, .5, 0)
+    repo.update_progress(uid, "read-last", 0, 0, 0)
+    with repo.connect() as conn:
+        conn.execute("UPDATE direct_progress SET updated_at='2026-10-06 12:00:00' WHERE book_id='read-first'")
+        conn.execute("UPDATE direct_progress SET updated_at='2026-10-07 12:00:00' WHERE book_id='read-last'")
+    repo.update_progress(b["userId"], "read-first", 2, .9, 0)
+    repo.save(uid, {"bookId": "read-first", "name": "refreshed"})
+    repo.categorize(uid, "read-first", repo.save_category(uid, "我的分类")["categoryId"])
+    items = DirectReadingRepository(repo.db_path).shelf(uid)
+    assert [r["bookId"] for r in items] == ["read-last", "read-first", "never-read"]
+    assert items[0]["lastReadAt"] == "2026-10-07T12:00:00Z"
+    assert items[1]["progress"] == {"chapterIndex": 1, "position": .5, "revision": 1}
+    assert items[2]["lastReadAt"] is None
+    with pytest.raises(HTTPException):
+        repo.update_progress(uid, "read-first", 0, 0, 0)
+    assert repo.shelf(uid)[1]["lastReadAt"] == items[1]["lastReadAt"]
+
+
+@pytest.mark.parametrize("method,path,payload", [
+    ("GET", "/shelf/categories", None),
+    ("POST", "/shelf/categories", {"name": "想读"}),
+    ("PATCH", "/shelf/categories/test", {"name": "已读"}),
+    ("DELETE", "/shelf/categories/test", None),
+    ("PATCH", f"/shelf/{BOOK}/category", {"categoryId": None}),
+])
+async def test_anonymous_category_access_denied(app_env, method, path, payload):
+    c = await client(app_env[0])
+    async with c:
+        assert (await c.request(method, "/api/direct" + path, json=payload)).status_code == 401

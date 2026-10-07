@@ -537,7 +537,7 @@ export function LibraryBookDetailPage() {
                 <div className="space-y-2">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">主源信息</h4>
                   <div className="grid grid-cols-2 gap-y-2 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                    <div className="text-slate-500">名称</div><div className="text-slate-900 text-right">{book.primarySourceName} {(book.primarySourceId?.includes("official") || false) ? "(官方)" : ""}</div>
+                    <div className="text-slate-500">名称</div><div className="text-slate-900 text-right">{book.primarySourceName}</div>
                     <div className="text-slate-500">最新章节</div><div className="text-slate-900 text-right">{book.lastChapterTitle || "-"}</div>
                     <div className="text-slate-500">总章节数</div><div className="text-slate-900 text-right">{book.totalChapters}</div>
                   </div>

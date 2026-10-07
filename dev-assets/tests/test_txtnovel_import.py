@@ -76,13 +76,48 @@ def env(tmp_path, monkeypatch):
 
 def test_session_encryption_user_boundary(env):
     service, _, _, a, b, *_ = env
-    assert service.status(a) == {'bound': True, 'username': 'forum-A'}
+    assert service.status(a) == {'bound': True, 'username': 'forum-A', 'enabled': True}
     assert not service.status(b)['bound']
     payload = service.store.path(a).read_bytes()
     assert b'cookie-secret' not in payload
     assert service.store.path(a).stat().st_mode & 0o777 == 0o600
     service.store.path(b).write_bytes(payload)
     with pytest.raises(HTTPException): service.status(b)
+
+async def test_plugin_management_disables_attachment_operations(env, monkeypatch):
+    from app.api import console
+    from app.core.app_config import AppConfig
+    from app.services import attachment_plugin
+
+    service, _, _, a, _, debit, requests, _ = env
+    enabled = {}
+    cfg = SimpleNamespace(
+        is_plugin_enabled=lambda key, default=True: enabled.get(key, default),
+        set_plugin_enabled=lambda key, value: enabled.update({key: value}),
+    )
+    monkeypatch.setattr(AppConfig, 'get', lambda: cfg)
+    monkeypatch.setattr(attachment_plugin, 'txtnovel_import', service)
+    scheduler = SimpleNamespace(_plugins={}, config={})
+    monkeypatch.setattr(console, '_plugin_scheduler', scheduler)
+    item = console.list_plugins()['items'][0]
+    assert (item['pluginId'], item['origin'], item['category'], item['attachmentSource']) == ('txtnovel_vip', 'custom', 'completed', True)
+    assert console.enable_plugin('txtnovel_vip', {'enabled': False})['enabled'] is False
+    assert console.get_plugin('txtnovel_vip')['enabled'] is False
+    assert service.status(a)['bound'] is True
+    for operation in (
+        lambda: service.login(a, 'forum-A', 'unused'),
+        lambda: service.search(a, '测试', 1),
+        lambda: service.preview(a, '456'),
+        lambda: service.download(a, 'unused'),
+    ):
+        with pytest.raises(HTTPException, match='书香门第插件已停用'):
+            await operation()
+    assert requests == [] and debit == []
+    service.store.remove(a)
+    assert service.status(a)['bound'] is False
+    assert console.batch_enable_plugins({'pluginIds': ['txtnovel_vip'], 'enabled': True})['results'][0]['enabled'] is True
+    assert console.get_plugin('txtnovel_vip')['enabled'] is True
+
 
 def test_parsers_safe_url():
     items, next_url = parse_search(SEARCH)

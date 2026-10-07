@@ -60,7 +60,7 @@ export function DirectSearchPage() {
     } finally { if (controller.current === active) setBusy(false) }
   }
   return <div className="mx-auto max-w-5xl space-y-5 p-4 md:p-8">
-    <div><h1 className="text-2xl font-semibold">搜索书源</h1><p className="mt-2 text-sm text-slate-500">按轻小说、完结、连载中选择书源，同书合并。加入书库后，阅读当前章节时自动对齐多源并择优；整本下载可选。</p></div>
+    <div><h1 className="text-2xl font-semibold">搜索书源</h1><p className="mt-2 text-sm text-slate-500">按轻小说、完结、连载选择书源，同书合并。加入书库后，阅读当前章节时自动对齐多源并择优；整本下载可选。</p></div>
     <form className="flex gap-2" onSubmit={e => { e.preventDefault(); void search() }}>
       <Input aria-label="书名或作者" placeholder="输入书名或作者" value={keyword} onChange={e => setKeyword(e.target.value)} />
       <Button className="shrink-0 whitespace-nowrap" disabled={!keyword.trim() || !selected.length} type="submit">搜索</Button>
