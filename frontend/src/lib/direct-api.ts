@@ -1,16 +1,22 @@
-export interface DirectBook { bookId: string; sourceId: string; sourceName: string; name: string; author: string; intro?: string; coverUrl?: string; sourceCount?: number; sourceBookIds?: string[]; sources?: DirectBook[]; attachmentSource?: boolean; imported?: boolean; threadId?: string }
-export interface DirectSource { id: string; name: string; default?: boolean }
+export interface DirectBook { bookId: string; sourceId: string; sourceName: string; name: string; author: string; intro?: string; coverUrl?: string; sourceCount?: number; sourceBookIds?: string[]; sources?: DirectBook[]; attachmentSource?: boolean; imported?: boolean; threadId?: string; preferredSourceBookId?: string | null }
+export const sourceCategories = { light_novel: "轻小说", completed: "完结", ongoing: "连载中" } as const
+export type SourceCategory = keyof typeof sourceCategories
+export interface DirectSource { id: string; name: string; default?: boolean; category?: SourceCategory }
+export class DirectRequestError extends Error {
+  status: number
+  constructor(message: string, status: number) { super(message); this.status = status }
+}
 export interface DirectChapter { index: number; title: string }
 export interface Progress { chapterIndex: number; position: number; revision: number }
 export interface SearchResult { sourceId: string; items: DirectBook[]; groups?: DirectBook[]; error?: { message: string } | string; latencyMs: number }
 
 function responseError(body: { detail?: unknown }, status: number, fallback: string): Error {
   const detail = body.detail
-  if (typeof detail === "string" && detail.trim()) return new Error(detail)
+  if (typeof detail === "string" && detail.trim()) return new DirectRequestError(detail, status)
   if (detail && typeof detail === "object" && "message" in detail && typeof detail.message === "string" && detail.message.trim()) {
-    return new Error(detail.message)
+    return new DirectRequestError(detail.message, status)
   }
-  return new Error(`${fallback} (${status})`)
+  return new DirectRequestError(`${fallback} (${status})`, status)
 }
 
 export async function directRequest<T>(path: string, init: RequestInit = {}): Promise<T> {

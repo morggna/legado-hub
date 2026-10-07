@@ -332,3 +332,79 @@ async def test_site_withdrawal_reason_survives_aggregation_and_other_sources_sti
     result = await service.chapter_at(user, book['bookId'], toc['chapters'][0])
     assert result['content'] == BODY
     assert result['aggregation']['selectedSourceId'] == 'b'
+
+
+def test_grouping_unifies_simplified_traditional_titles_and_authors():
+    books = [dict(bookId='a', sourceId='a', name='無職轉生', author='理不盡な孫の手'),
+             dict(bookId='b', sourceId='b', name='无职转生', author='理不尽な孙の手')]
+    groups = grouped_books(books, '无职转生')
+    assert len(groups) == 1 and groups[0]['sourceCount'] == 2
+
+
+def test_volume_context_and_duplicate_titles_require_unique_anchors(env):
+    service = env[0]
+    assert not service.same_chapter('第一卷 第一章 开始', '第二卷 第一章 开始')
+    target = {'index': 0, 'title': '序章', 'nextTitle': '第一章 出发'}
+    chapters = [{'index': i, 'title': t} for i, t in enumerate(['序章', '第一章 归来', '序章', '第一章 出发'])]
+    assert service.aligned_candidates(target, chapters)[0]['index'] == 2
+    assert service.aligned_candidates({'index': 0, 'title': '序章'}, chapters) == []
+
+
+async def test_unique_title_aligns_after_long_frontmatter(env):
+    service, source, user, _ = env
+    source.tocs['b'] = [f'前言补充{i}' for i in range(40)] + source.tocs['b']
+    book = await service.add(user, ids('ab'))
+    result = await service.for_user(user).chapter(book['bookId'], 41)
+    assert result['title'] == '第二章 旅途'
+    assert result['aggregation']['supportCount'] == 1
+    assert ('chapter', 'a', 1) in source.calls and ('chapter', 'b', 41) in source.calls
+
+
+async def test_manual_source_bypasses_auto_cache_and_survives_source_refresh(env):
+    service, source, user, other = env
+    book = await service.add(user, ids())
+    await service.for_user(user).chapter(book['bookId'], 0)
+    service.select_source(user, book['bookId'], ids('b')[0])
+    source.bodies['b'] = BODY + '\n手动选择这条线路。'
+    source.calls.clear()
+    result = await service.for_user(user).chapter(book['bookId'], 0)
+    assert result['aggregation']['mode'] == 'manual'
+    assert result['content'].endswith('手动选择这条线路。')
+    assert [c for c in source.calls if c[0] == 'chapter'] == [('chapter', 'b', 0)]
+    refreshed = await service.refresh_sources(user, book['bookId'])
+    assert refreshed['sourceCount'] == 4
+    assert refreshed['preferredSourceBookId'] == ids('b')[0]
+    with pytest.raises(HTTPException):
+        service.select_source(other, book['bookId'], ids('b')[0])
+    with pytest.raises(HTTPException):
+        service.select_source(user, book['bookId'], 'unknown')
+
+
+async def test_catalog_refresh_fetches_new_source_without_renumbering_progress(env):
+    service, source, user, _ = env
+    book = await service.add(user, ids('a'))
+    toc = await service.for_user(user).toc(book['bookId'])
+    service.repository.update_progress(user, book['bookId'], 1, .5, 0)
+    source.tocs['a'].append('第四章 回家')
+    refreshed = await service.for_user(user).toc(book['bookId'], refresh=True)
+    assert len(refreshed['chapters']) == 4
+    assert refreshed['chapters'][:3] == toc['chapters']
+    assert service.repository.progress(user, book['bookId'])['chapterIndex'] == 1
+
+
+async def test_source_api_can_switch_downloaded_book_and_does_not_affect_other_users(env, overview_api):
+    service, source, user, other = env
+    client, current, downloads = overview_api
+    book = await service.add(user, ids('ab')); bid = book['bookId']
+    toc = await service.for_user(user).toc(bid)
+    folder = downloads.directory(user, bid); folder.mkdir(parents=True)
+    downloads.write_json(folder/'toc.json', toc)
+    downloads.write_json(folder/'chapter-0.json', {'title':'第一章 出发','content':'旧下载内容'})
+    source.bodies['b'] = BODY + '\n选择乙源。'
+    async with client:
+        assert (await client.put(f'/api/direct/books/{bid}/source', json={'sourceBookId':ids('b')[0]})).status_code == 200
+        result = await client.get(f'/api/direct/books/{bid}/chapters/0')
+        assert result.status_code == 200 and result.json()['content'].endswith('选择乙源。')
+        current.user_id = other
+        assert (await client.put(f'/api/direct/books/{bid}/source', json={'sourceBookId':ids('a')[0]})).status_code == 404
+        assert (await client.post(f'/api/direct/books/{bid}/sources/refresh')).status_code == 404

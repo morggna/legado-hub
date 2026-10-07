@@ -8,7 +8,7 @@ import { defaultReaderSettings, loadReaderSettings, saveReaderSettings } from '@
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   const storage = new Map<string, string>()
-  vi.stubGlobal('localStorage', {getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value)})
+  vi.stubGlobal('localStorage', {getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key)})
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 function mount(entry = "/books/test") {
@@ -80,4 +80,13 @@ it('rejects an invalid catalog chapter without requesting a body or hanging in l
   const fetcher = mount('/books/test?chapter=200')
   await screen.findByText('章节不存在，请返回目录选择章节')
   expect(fetcher.mock.calls.some(([url]) => url.includes('/chapters/'))).toBe(false)
+})
+
+it('adopts another device’s saved chapter after focus instead of remaining at its initial progress', async () => {
+  const fetcher = mount()
+  await screen.findByText('首章内容')
+  await waitFor(() => expect(fetcher.mock.calls.filter(([url,init]) => url.endsWith('/progress') && init?.method !== 'PUT').length).toBe(2))
+  fetcher.mockImplementation(async (url: string) => Response.json(url.endsWith('/progress') ? {chapterIndex:1,position:.6,revision:3} : url.includes('/chapters/1') ? {title:'第二章',content:'次章内容'} : {}))
+  fireEvent.focus(window)
+  await screen.findByText('次章内容')
 })

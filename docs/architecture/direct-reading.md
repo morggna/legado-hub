@@ -97,3 +97,13 @@ The root `/manifest.webmanifest` defines a stable `/` app ID, `/console/library`
 Login and shelf pages provide “添加到主屏幕”. Chromium's deferred installation event is prompted only after a click; iPhone/iPad show Safari share-menu instructions, including the optional “Open as Web App” switch. Already-installed standalone windows hide this entry. OS installation still requires the user's action and iOS may start with a separate login session.
 
 A root-scope service worker handles navigation from the network **without any Cache Storage**; APIs, book data and assets are not intercepted or stored. A failed navigation shows a small reconnect page, not a stale authenticated screen. `index.html`, the worker and manifest revalidate; registration uses `updateViaCache: none`. This adds installability rather than offline reading; saved TXT files remain usable in the device's file app.
+
+## 分类、同步与线路更新（2026-10-07）
+
+`GET /api/direct/sources` 返回 `category`：`light_novel`、`completed`、`ongoing`，对应轻小说、完结、连载中。插件可用 `content.category` 明确指定，轻小说标记优先识别 `light-novel`；全本小说、夜伴书屋和 TXT 整本源归入完结，书香门第附件也归入完结；其余通用在线书源归入连载中。这里分类的是书源用途，通用站点仍可能包含已完结作品。搜索只请求当前分类选中的来源。
+
+进度继续使用服务端原子 revision 校验。浏览器串行提交并合并滚动中的待保存位置，切后台/pagehide 时以 keepalive 提交；返回前台、联网和可见时每 15 秒拉取服务器最新 revision。409 时应用服务器的章节及章内位置，放弃旧设备的过期写入；网络失败保留当前待保存位置并自动重试，同一用户同一本书的暂存位置存于 localStorage。重新打开时仅恢复与服务器 revision 一致的暂存记录。章内位置变化同样会重新定位阅读视图。进度接口禁用 HTTP 缓存，保存时优先检查持久目录，避免重查远端书源拖慢提交。
+
+正文共识、句序检测和缺失量排序继续复用上游 `CandidateSelectionPolicy`。同书识别先转换繁简书名与作者，实际保存仍保留既有书籍 ID。章节匹配允许唯一标题跨较大目录偏移，重复标题必须有邻近锚点，显式卷号冲突不能对齐。初次补目录仅采用双方唯一锚点，刷新既有目录仅追加，保留已有阅读与下载序号。新增 `originIndex` 保留来源本身的章节编号。聚合缓存使用 `policyVersion=2` 并区分自动/手动线路；旧缓存会按需重新验证。
+
+`PUT /api/direct/books/{bookId}/source` 接收 `{sourceBookId: string|null}`，只能选择自己书库中该书已收录的线路；null 恢复自动择优。目录页和阅读器均可选线。手动模式不会退回其他来源，也不复用自动线路的下载正文。`POST .../sources/refresh` 补搜同书线路，保留原书架 ID、进度、下载和选线；`GET .../overview?refresh=true` 真正刷新来源目录，而非只重新请求服务器缓存。附件导入书籍继续使用个人本地文件。

@@ -10,6 +10,7 @@ import './reader.css'
 interface Props {
   userId: string; title: string; chapters: DirectChapter[]; index: number
   sourceStatus?: string
+  sourceControl?: React.ReactNode
   chapter?: { title: string; content: string }; loading: boolean; error?: string
   position: number; onPosition: (position: number) => void
   onChapter: (index: number, position?: number) => void; onClose: () => void; onRetry: () => void
@@ -71,7 +72,7 @@ export function LegadoReader(props: Props) {
     <header className="reader-header" inert={!tools || !!drawer}>
       <div className="reader-header-left"><IconButton label="返回目录" icon="arrowLeft" onClick={props.onClose} /><IconButton label="目录" icon="list" onClick={() => setDrawer('toc')} /></div>
       <strong className="reader-header-title">{props.title}</strong>
-      <div className="reader-header-actions"><IconButton label="阅读设置" icon="settings" onClick={() => setDrawer('settings')} /></div>
+      <div className="reader-header-actions">{props.sourceControl}<IconButton label="阅读设置" icon="settings" onClick={() => setDrawer('settings')} /></div>
     </header>
     {drawer && <button type="button" className="reader-drawer-backdrop" aria-label="关闭面板" onClick={() => setDrawer(null)} />}
     {drawer === 'toc' && <aside className="reader-drawer reader-drawer-left open" aria-label="目录抽屉">
@@ -114,6 +115,7 @@ function ChapterCanvas({ chapter, settings, position, onPosition, onPrevious, on
   const wheelTime = useRef(0)
   const paginated = settings.pageMode === 'paginate'
   const paragraphs = useMemo(() => splitParagraphs(chapter.content), [chapter.content])
+  useLayoutEffect(() => { location.current = position }, [position])
   useLayoutEffect(() => {
     const el = viewport.current!
     const article = body.current!
@@ -139,7 +141,7 @@ function ChapterCanvas({ chapter, settings, position, onPosition, onPrevious, on
     observer.observe(el)
     void document.fonts?.ready.then(measure)
     return () => { active = false; observer.disconnect(); cancelAnimationFrame(frame) }
-  }, [paginated, settings, chapter.content])
+  }, [paginated, settings, chapter.content, position])
   const turn = useCallback((delta: number) => {
     if (paused || restoring.current) return
     const el = viewport.current!

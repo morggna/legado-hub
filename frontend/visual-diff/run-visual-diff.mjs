@@ -567,12 +567,12 @@ async function installMocks(page, scenario = {}) {
 }
 
 function mockApi(path, method, scenario = {}) {
-  if (path === "/api/direct/sources") return {items: [{id: "quanben5_com", name: "全本小说网", default: true}, {id: "hjwzw_com", name: "黄金屋", default: true}]}
+  if (path === "/api/direct/sources") return {items: [{id: "wenku8_net", name: "轻小说文库", category: "light_novel"}, {id: "quanben5_com", name: "全本小说网", category: "completed"}, {id: "hjwzw_com", name: "黄金屋", category: "ongoing"}]}
   if (path === "/api/direct/downloads" || path === "/api/accounts/invitations") return {items: []}
   if (path === "/api/direct/shelf" && scenario.library === "empty") return {items: []}
   if (path === "/api/direct/shelf") return {items: [{bookId: "fixture-book", sourceId: "fixture", sourceName: "全本小说网", name: "三国演义", author: "罗贯中", coverUrl: "https://covers.example/sanguo.svg", sourceCount: 3}]}
   if (path.endsWith("/fixture-book/overview")) return {
-    book: {bookId:"fixture-book",name:"三国演义",author:"罗贯中",coverUrl:"https://covers.example/sanguo.svg",intro:"天下大势，分久必合，合久必分。"},
+    book: {bookId:"fixture-book",name:"三国演义",author:"罗贯中",coverUrl:"https://covers.example/sanguo.svg",intro:"天下大势，分久必合，合久必分。",sources:[{bookId:"a-one",sourceId:"a",sourceName:"全本小说网"},{bookId:"b-one",sourceId:"b",sourceName:"黄金屋"},{bookId:"c-one",sourceId:"c",sourceName:"备用书源"}]},
     sources: [{sourceId:"a",sourceName:"全本小说网",status:"available",chapterCount:120,lastChapter:"第一百二十回 三分归一统",latencyMs:230}, {sourceId:"b",sourceName:"黄金屋",status:"available",chapterCount:120,lastChapter:"第一百二十回 三分归一统",latencyMs:840}, {sourceId:"c",sourceName:"备用书源",status:"unavailable",chapterCount:0,lastChapter:"",latencyMs:20000}],
     progress:{chapterIndex:1,position:.3,revision:2},download:null,chapterCount:120,total:120,counts:{downloaded:1,cached:1,on_demand:118,failed:0},page:1,pageSize:50,
     chapters:[{index:0,title:"第一回 宴桃园豪杰三结义",status:"downloaded"},{index:1,title:"第二回 张翼德怒鞭督邮",status:"cached",selectedSourceName:"全本小说网",aggregation:{mode:"consensus",supportCount:1,sources:[{sourceId:"a",sourceName:"全本小说网",status:"accepted"},{sourceId:"b",sourceName:"黄金屋",status:"accepted"}]}},{index:2,title:"第三回 议温明董卓叱丁原",status:"on_demand"},{index:3,title:"第四回 废汉帝陈留践位",status:"on_demand"}]

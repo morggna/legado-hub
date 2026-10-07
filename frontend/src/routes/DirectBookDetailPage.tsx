@@ -5,7 +5,7 @@ import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, RefreshCw } from "lucid
 import { BookCover } from "@/components/BookCover"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { bookPath, bookReaderUrl, directRequest, downloadLabels, type BookOverview } from "@/lib/direct-api"
+import { bookPath, bookReaderUrl, directRequest, downloadLabels, type BookOverview, type DirectBook } from "@/lib/direct-api"
 
 const statusLabels: Record<string, string> = {on_demand: "按需获取", cached: "已有缓存", downloaded: "已下载", failed: "下载失败"}
 const auditLabels: Record<string, string> = {accepted: "正文可用", no_aligned_chapter: "未找到对应章节", title_mismatch: "章节不匹配", too_large: "正文过大", incomplete: "正文不完整", unavailable: "请求失败"}
@@ -26,14 +26,19 @@ function BookDetail({ bookId }: {bookId: string}) {
   const action = useMutation({mutationFn: (method: string) => directRequest(`${path}/download`, {method}), onSuccess: async () => {
     await Promise.all([client.invalidateQueries({queryKey:["direct", "overview", bookId]}), client.invalidateQueries({queryKey:["direct", "downloads"]})])
   }})
+  const lines = useMutation({ mutationFn: (sourceBookId: string | null) => directRequest<DirectBook>(`${path}/source`, { method: "PUT", body: JSON.stringify({ sourceBookId }) }),
+    onSuccess: async () => { await Promise.all([client.invalidateQueries({ queryKey: ["direct", "overview", bookId] }), client.invalidateQueries({ queryKey: ["direct", "detail", bookId] }), client.invalidateQueries({ queryKey: ["direct", "chapter", bookId] })]) } })
+  const discovery = useMutation({ mutationFn: () => directRequest<DirectBook>(`${path}/sources/refresh`, { method: "POST" }),
+    onSuccess: async () => { await client.invalidateQueries({ queryKey: ["direct"] }); await directRequest(`${path}/overview?refresh=true`); await overview.refetch() } })
+  const refresh = useMutation({ mutationFn: () => directRequest(`${path}/overview?refresh=true`), onSuccess: async () => { await overview.refetch() } })
   const data = overview.data
   const job = data?.download
   const active = job && ["running", "queued"].includes(job.state)
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0)/50))
   return <div className="mx-auto max-w-6xl space-y-6 py-4 md:p-8">
-    <div className="flex items-center justify-between gap-3"><Button asChild variant="ghost"><Link to="/console/library"><ArrowLeft />我的书库</Link></Button><Button variant="outline" disabled={overview.isFetching} onClick={() => { void overview.refetch() }}><RefreshCw className={overview.isFetching ? "animate-spin" : ""} />重新载入</Button></div>
+    <div className="flex items-center justify-between gap-3"><Button asChild variant="ghost"><Link to="/console/library"><ArrowLeft />我的书库</Link></Button><Button variant="outline" disabled={overview.isFetching || refresh.isPending} onClick={() => refresh.mutate()}><RefreshCw className={overview.isFetching ? "animate-spin" : ""} />重新载入</Button></div>
     {overview.isPending && <p role="status" className="rounded-xl border bg-white p-8">正在载入书籍目录和线路…</p>}
-    {(overview.error || action.error) && <p role="alert" className="rounded-lg bg-red-50 p-4 text-red-700">{overview.error?.message || action.error?.message}</p>}
+    {(overview.error || action.error || lines.error || discovery.error || refresh.error) && <p role="alert" className="rounded-lg bg-red-50 p-4 text-red-700">{overview.error?.message || action.error?.message || lines.error?.message || discovery.error?.message || refresh.error?.message}</p>}
     {data && <>
       <section className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 gap-y-3 rounded-xl border bg-white p-5 md:p-6"><BookCover name={data.book.name} url={data.book.coverUrl} /><div className="min-w-0 flex-1 space-y-3">
         <h1 className="text-2xl font-semibold">{data.book.name}</h1><p className="text-sm text-slate-500">{data.book.author || "作者未知"} · {data.chapterCount} 章 · {data.sources.length} 条线路</p>
@@ -45,11 +50,12 @@ function BookDetail({ bookId }: {bookId: string}) {
         {active && <progress className="col-span-2 w-full" value={job.completed} max={job.total || 1} />}{job?.error && <p className="col-span-2 text-sm text-red-600">{job.error}</p>}
       </section>
       <section className="overflow-hidden rounded-xl border bg-white"><div className="border-b p-5"><h2 className="font-semibold">书源线路</h2><p className="mt-1 text-xs text-slate-500">{data.book.imported ? "已从附件导入，章节在本地读取，不再请求论坛。" : "阅读时自动对齐并比较来源；目录可用不代表每章正文都可用。响应时间是最近一次目录查询耗时。"}
-        {data.checkedAt && <> 检查于 {new Date(data.checkedAt*1000).toLocaleTimeString()}。</>}</p></div>
+        {data.checkedAt && <> 检查于 {new Date(data.checkedAt*1000).toLocaleTimeString()}。</>}</p>{!data.book.imported && <div className="mt-3 flex flex-wrap items-center gap-2"><Button size="sm" variant={data.book.preferredSourceBookId ? "outline" : "default"} disabled={lines.isPending} onClick={() => lines.mutate(null)}>自动择优</Button><Button size="sm" variant="outline" disabled={discovery.isPending} onClick={() => discovery.mutate()}>{discovery.isPending ? "正在搜索同书线路…" : "补搜同书线路"}</Button>{discovery.data && <span className="text-xs text-slate-500">已更新，共 {discovery.data.sourceCount} 个来源</span>}</div>}</div>
         <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">{data.sources.map((source, i) => <div key={`${source.sourceId}-${i}`} className="space-y-2 rounded-lg border p-3">
           <div className="flex items-center justify-between gap-2"><strong className="text-sm">{source.sourceName}</strong><span className={`shrink-0 text-xs ${source.status === "available" ? "text-emerald-600" : source.status === "unavailable" ? "text-red-600" : "text-slate-400"}`}>{source.status === "available" ? "目录可用" : source.status === "unavailable" ? "目录暂不可用" : "尚未检查"}</span></div>
           <p className="text-xs text-slate-500">{source.chapterCount === null ? "章节数待检查" : `${source.chapterCount} 章`}{source.latencyMs !== null && ` · ${(source.latencyMs/1000).toFixed(2)} 秒`}</p>
           <p className="truncate text-xs text-slate-500" title={source.lastChapter}>最新：{source.lastChapter || "暂无记录"}</p>
+          {!data.book.imported && data.book.sources?.filter(s => s.sourceId === source.sourceId).map(line => <Button key={line.bookId} size="sm" variant={data.book.preferredSourceBookId === line.bookId ? "default" : "outline"} disabled={lines.isPending} onClick={() => lines.mutate(line.bookId)}>{data.book.preferredSourceBookId === line.bookId ? "当前线路" : "使用此线路"}</Button>)}
         </div>)}</div>
       </section>
       <section className="overflow-hidden rounded-xl border bg-white"><header className="space-y-3 border-b p-5"><div className="flex items-center justify-between"><h2 className="font-semibold">章节目录</h2><span className="text-xs text-slate-500">共 {data.chapterCount} 章</span></div>
@@ -62,7 +68,7 @@ function BookDetail({ bookId }: {bookId: string}) {
             <span className="w-8 shrink-0 text-sm text-slate-400">{chapter.index + 1}</span><div className="min-w-0 flex-1"><p className="text-sm font-medium">{chapter.title}</p><p className="mt-1 text-xs text-slate-400">{data.book.imported ? "本地附件" : chapter.selectedSourceName ? `已选线路：${chapter.selectedSourceName}` : "阅读时自动选线"}{chapter.index === data.progress.chapterIndex && data.progress.revision > 0 && " · 上次阅读"}</p>{chapter.error && <p className="mt-1 text-xs text-red-600">{chapter.error}</p>}</div>
             <span className={`shrink-0 text-xs ${chapter.status === "failed" ? "text-red-600" : chapter.status === "on_demand" ? "text-slate-400" : "text-emerald-600"}`}>{statusLabels[chapter.status]}</span>
           </Link>
-          {chapter.aggregation && <details className="px-5 pb-3 text-xs text-slate-500"><summary className="cursor-pointer">本章线路记录 · {chapter.aggregation.mode === "consensus" ? `${chapter.aggregation.supportCount + 1} 源正文一致` : "降级选线"}</summary><ul className="mt-2 space-y-1">{chapter.aggregation.sources.map(s => <li key={s.sourceId}>{s.sourceName}：{auditLabels[s.status] || s.status}</li>)}</ul></details>}
+          {chapter.aggregation && <details className="px-5 pb-3 text-xs text-slate-500"><summary className="cursor-pointer">本章线路记录 · {chapter.aggregation.mode === "manual" ? "手动选线" : chapter.aggregation.mode === "consensus" ? `${chapter.aggregation.supportCount + 1} 源正文一致` : "降级选线"}</summary><ul className="mt-2 space-y-1">{chapter.aggregation.sources.map(s => <li key={s.sourceId}>{s.sourceName}：{auditLabels[s.status] || s.status}</li>)}</ul></details>}
         </div>)}{!data.chapters.length && <p className="p-8 text-center text-sm text-slate-400">没有符合条件的章节</p>}</div>
         <footer className="flex items-center justify-between border-t p-4"><Button variant="outline" disabled={page <= 1 || overview.isFetching} onClick={() => setPage(p => p-1)}><ChevronLeft />上一页</Button><span className="text-sm text-slate-500">{page} / {totalPages}</span><Button variant="outline" disabled={page >= totalPages || overview.isFetching} onClick={() => setPage(p => p+1)}>下一页<ChevronRight /></Button></footer>
       </section>

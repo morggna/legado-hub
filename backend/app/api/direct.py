@@ -3,7 +3,7 @@ import json
 import time
 from collections import Counter
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse, FileResponse
 from app.services.book_downloads import book_downloads
 from starlette.background import BackgroundTask
@@ -33,7 +33,7 @@ def sources(request: Request):
     user = auth_service.require_user(request)
     items = direct_reading.sources()
     if txtnovel_import.status(user.user_id)["bound"]:
-        items.append({"id": SOURCE_ID, "name": SOURCE_NAME, "attachmentSource": True})
+        items.append({"id": SOURCE_ID, "name": SOURCE_NAME, "attachmentSource": True, "category": "completed"})
     return {"items": items}
 
 
@@ -85,6 +85,23 @@ async def search(request: Request, keyword: str = Query(min_length=1, max_length
     return StreamingResponse(stream(), media_type="text/event-stream", background=BackgroundTask(release), headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
+class SourcePreference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    sourceBookId: str | None = Field(default=None, max_length=6000)
+
+
+@router.put("/books/{book_id}/source")
+def select_source(book_id: str, payload: SourcePreference, request: Request):
+    user = auth_service.require_user(request)
+    return aggregate_reading.select_source(user.user_id, book_id, payload.sourceBookId)
+
+
+@router.post("/books/{book_id}/sources/refresh")
+async def refresh_sources(book_id: str, request: Request):
+    user = auth_service.require_user(request)
+    return await aggregate_reading.refresh_sources(user.user_id, book_id)
+
+
 @router.get("/books/{book_id}/detail")
 async def detail(book_id: str, request: Request):
     user = auth_service.require_user(request)
@@ -101,13 +118,13 @@ async def toc(book_id: str, request: Request):
 @router.get("/books/{book_id}/overview")
 async def overview(book_id: str, request: Request, page: int = Query(default=1, ge=1),
                    pageSize: int = Query(default=50, ge=1, le=100), keyword: str = Query(default="", max_length=100),
-                   status: str = Query(default="all", pattern="^(all|downloaded|cached|on_demand|failed)$")):
+                   status: str = Query(default="all", pattern="^(all|downloaded|cached|on_demand|failed)$"), refresh: bool = False):
     user = auth_service.require_user(request)
     book = direct_repository.get(user.user_id, book_id)
     if not book:
         raise HTTPException(404, "书籍不在你的书库中")
     snapshot = book_downloads.cached(user.user_id, book_id, "toc.json")
-    toc = snapshot or await aggregate_reading.for_user(user.user_id).toc(book_id, allow_empty=True)
+    toc = snapshot or await aggregate_reading.for_user(user.user_id).toc(book_id, allow_empty=True, refresh=refresh)
     # Legacy upgrade may enrich shelf metadata while loading the directory.
     book = direct_repository.get(user.user_id, book_id) or book
     summaries = direct_repository.chapter_summaries(user.user_id, book_id)
@@ -131,7 +148,7 @@ async def overview(book_id: str, request: Request, page: int = Query(default=1, 
         rows.append({"index": index, "title": chapter["title"], "status": state,
                      "selectedSourceName": audit.get("selectedSourceName") if audit else None,
                      "aggregation": audit, "error": job["error"] if state == "failed" else None})
-    catalog = toc
+    catalog = await aggregate_reading.for_user(user.user_id).toc(book_id, allow_empty=True, refresh=True) if refresh and snapshot and not book.get("imported") else toc
     if snapshot and not snapshot.get("sources"):
         # Enrich old downloaded books without replacing their frozen chapter axis.
         try:
@@ -155,7 +172,8 @@ async def overview(book_id: str, request: Request, page: int = Query(default=1, 
 @router.get("/books/{book_id}/chapters/{index}")
 async def chapter(book_id: str, index: int, request: Request):
     user = auth_service.require_user(request)
-    result = book_downloads.cached(user.user_id, book_id, f"chapter-{index}.json")
+    book = direct_repository.get(user.user_id, book_id)
+    result = None if book and book.get("preferredSourceBookId") else book_downloads.cached(user.user_id, book_id, f"chapter-{index}.json")
     if result:
         return {k: v for k, v in result.items() if k != "url"}
     snapshot = book_downloads.cached(user.user_id, book_id, "toc.json")
@@ -198,16 +216,20 @@ async def remove(book_id: str, request: Request):
 
 
 @router.get("/books/{book_id}/progress")
-def progress(book_id: str, request: Request):
+def progress(book_id: str, request: Request, response: Response):
     user = auth_service.require_user(request)
     aggregate_reading.for_user(user.user_id).book_target(book_id)
+    response.headers["Cache-Control"] = "no-store"
     return direct_repository.progress(user.user_id, book_id)
 
 
 @router.put("/books/{book_id}/progress")
-async def update_progress(book_id: str, payload: ProgressRequest, request: Request):
+async def update_progress(book_id: str, payload: ProgressRequest, request: Request, response: Response):
     user = auth_service.require_user(request)
-    toc = book_downloads.cached(user.user_id, book_id, "toc.json") or await aggregate_reading.for_user(user.user_id).toc(book_id)
+    aggregate_reading.for_user(user.user_id).book_target(book_id)
+    stored_toc, _ = direct_repository.aggregate_toc(user.user_id, book_id)
+    toc = book_downloads.cached(user.user_id, book_id, "toc.json") or stored_toc or await aggregate_reading.for_user(user.user_id).toc(book_id)
+    response.headers["Cache-Control"] = "no-store"
     if payload.chapterIndex >= len(toc["chapters"]):
         raise HTTPException(400, "章节超出目录范围")
     return direct_repository.update_progress(user.user_id, book_id, payload.chapterIndex, payload.position, payload.revision)

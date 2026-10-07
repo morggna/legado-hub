@@ -34,9 +34,22 @@ class DirectReadingService:
                 and meta.content.get("access") == "free"
                 and {"search", "detail", "toc", "chapter"}.issubset(plugin.capabilities))
 
+    @staticmethod
+    def source_category(meta):
+        tags = set(getattr(meta, "tags", []) or [])
+        configured = meta.content.get("category")
+        if configured in {"light_novel", "completed", "ongoing"}:
+            return configured
+        if "light-novel" in tags:
+            return "light_novel"
+        if "completed" in tags or meta.id in {"quanben5_com", "yeban360_com", "aishu99_com", "aiqu654_com"}:
+            return "completed"
+        return "ongoing"
+
     def sources(self):
         return sorted([
             {"id": p.metadata.id, "name": p.metadata.name,
+             "category": self.source_category(p.metadata),
              "default": p.metadata.id in os.getenv("LEGADOHUB_DIRECT_DEFAULT_SOURCES", "").split(",")}
             for p in self.scheduler._plugins.values() if self.eligible(p)
         ], key=lambda p: p["name"])

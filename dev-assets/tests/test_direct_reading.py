@@ -227,3 +227,13 @@ async def test_aggregate_shelf_api_and_personal_ownership(app_env):
         for route in ['detail','toc','progress','chapters/0']:
             assert (await b.get(f"/api/direct/books/{book['bookId']}/{route}")).status_code == 404
         assert (await b.post(f"/api/direct/books/{book['bookId']}/download")).status_code == 404
+
+
+def test_source_categories_prioritize_metadata_and_light_novel_tag(app_env):
+    reader, fake = app_env[2], app_env[4]
+    meta = fake._plugins['fixture'].metadata
+    assert reader.sources()[0]['category'] == 'ongoing'
+    meta.tags = ['light-novel']
+    assert reader.sources()[0]['category'] == 'light_novel'
+    meta.content['category'] = 'completed'
+    assert reader.sources()[0]['category'] == 'completed'

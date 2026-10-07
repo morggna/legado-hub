@@ -16,7 +16,7 @@ it('replaces cumulative search groups and saves every candidate in one shelf ent
     if(url.startsWith('/api/direct/search?')) return new Response(
       `data: ${JSON.stringify({sourceId:'a',items:[],groups:[{...book,sourceCount:1,sourceBookIds:['a:one']}],latencyMs:100})}\n\n`+
       `data: ${JSON.stringify({sourceId:'b',items:[],groups:[book],latencyMs:200})}\n\nevent: done\ndata: {}\n\n`)
-    if(url.endsWith('/sources')) return Response.json({items:[{id:'a',name:'甲源'},{id:'b',name:'乙源'}]})
+    if(url.endsWith('/sources')) return Response.json({items:[{id:'a',name:'甲源',category:'light_novel'},{id:'b',name:'乙源',category:'light_novel'}]})
     if(init?.method === 'POST') return Response.json(book)
     return Response.json({items:[]})
   })
@@ -39,4 +39,22 @@ it('renders shelf covers with a readable fallback for failed image hosts', async
   fireEvent.error(cover)
   expect(screen.getByLabelText('三国演义暂无封面')).toBeVisible()
   expect(screen.getByRole('button',{name:'整本下载'})).toBeVisible()
+})
+
+it('switches the three source categories and searches only the selected category', async () => {
+  const fetcher = vi.fn(async (url: string) => {
+    if (url.endsWith('/sources')) return Response.json({items:[{id:'light',name:'轻小说文库',category:'light_novel'},{id:'full',name:'全本源',category:'completed'},{id:'serial',name:'连载源',category:'ongoing'}]})
+    if (url.includes('/search?')) return new Response('event: done\ndata: {}\n\n')
+    return Response.json({items:[]})
+  })
+  vi.stubGlobal('fetch', fetcher); mount(<DirectSearchPage />)
+  await screen.findByText('轻小说文库')
+  fireEvent.click(screen.getByRole('button', {name:/^完结/}))
+  await screen.findByText('全本源')
+  expect(screen.queryByText('轻小说文库')).toBeNull()
+  fireEvent.change(screen.getByRole('textbox', {name:'书名或作者'}), {target:{value:'测试'}})
+  fireEvent.click(screen.getByRole('button', {name:'搜索'}))
+  await waitFor(() => expect(fetcher.mock.calls.some(([url]) => url.includes('/search?') && new URL(url, 'https://example.com').searchParams.get('sources') === 'full')).toBe(true))
+  fireEvent.click(screen.getByRole('button', {name:/^连载中/}))
+  await screen.findByText('连载源')
 })
