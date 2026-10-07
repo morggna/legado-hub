@@ -15,7 +15,10 @@ build/
 
 .env
 .env.*
+!.env.example
 secrets/
+deploy/direct/state/
+**/legend-proxy.json
 
 logs/
 *.log
@@ -80,7 +83,11 @@ dev-assets/tests/*
 !dev-assets/tests/test_user_subscriptions.py
 !dev-assets/tests/test_manual_candidate_selection.py
 !dev-assets/tests/test_direct_reading.py
+!dev-assets/tests/test_txtnovel_import.py
+!dev-assets/tests/test_wenku8_plugin.py
 !dev-assets/tests/test_account_invites.py
 !dev-assets/tests/test_book_downloads.py
 
 !dev-assets/tests/test_direct_aggregation.py
+
+!dev-assets/tests/test_linovelib_plugin.py

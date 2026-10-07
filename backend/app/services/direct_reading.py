@@ -85,7 +85,8 @@ class DirectReadingService:
         error = result.get("error") or result.get("debug", {}).get("error")
         if error:
             message = error.get("message", "书源请求失败") if isinstance(error, dict) else str(error)
-            raise HTTPException(502, str(message)[:500])
+            status = 410 if isinstance(error, dict) and error.get("code") == "SOURCE_REMOVED" else 502
+            raise HTTPException(status, str(message)[:500])
 
     async def cached(self, key, operation):
         now = time.monotonic()
@@ -144,6 +145,44 @@ class DirectReadingService:
                 raise HTTPException(502, "书源未返回章节目录")
             return {"bookId": book_id, "chapters": chapters}
         return await self.cached(("toc", book_id), load)
+
+    async def full_book(self, book_id, toc):
+        source_id, url = self.book_target(book_id)
+        if "full_book" not in self.plugin(source_id).capabilities:
+            return {}
+        chapters = toc["chapters"]
+        expected = {c["url"]: c for c in chapters}
+        if len(expected) != len(chapters):
+            raise HTTPException(502, "整本目录地址不唯一")
+        for chapter_url in expected:
+            self.validate_url(source_id, chapter_url)
+        detail = await self.detail(book_id)
+        async with self._slots:
+            raw = await self.scheduler.full_book(source_id, url, [
+                {"chapterUrl": c["url"], "title": c["title"]} for c in chapters
+            ], name=detail["name"])
+        if not isinstance(raw, list) or len(raw) > len(chapters):
+            raise HTTPException(502, "整本结果格式无效")
+        results, size = {}, 0
+        for item in raw:
+            chapter_url = item.get("chapterUrl")
+            chapter = expected.get(chapter_url)
+            if (not chapter or chapter_url in results or item.get("title") != chapter["title"]
+                    or item.get("authRequired") or item.get("isPaid")):
+                raise HTTPException(502, "整本结果与目录不符或需要授权")
+            content = item.get("content")
+            if not isinstance(content, str) or not content.strip():
+                raise HTTPException(502, "整本结果正文为空")
+            length = len(content.encode("utf-8"))
+            size += length
+            if length > 2 * 1024 * 1024 or size > 256 * 1024 * 1024:
+                raise HTTPException(502, "整本结果超出缓存限制")
+            results[chapter_url] = {
+                "index": chapter["index"], "title": chapter["title"], "content": content,
+                "wordCount": 0, "previewOnly": False,
+                "extra": {"downloadMethod": "native", "sourceId": source_id},
+            }
+        return results
 
     async def chapter(self, book_id, index):
         source_id, _ = self.book_target(book_id)

@@ -97,7 +97,7 @@ class AggregateReadingService(CandidateSelectionPolicy):
         # Keep legacy book IDs/progress/downloads intact. Later discoveries enrich
         # the existing entry, rather than producing another shelf card.
         existing = next((b for b in self.repository.shelf(user_id)
-                         if identity(b) == book["bookId"]), None)
+                         if not b.get("imported") and identity(b) == book["bookId"]), None)
         if existing:
             book["bookId"] = existing["bookId"]
             if existing.get("legacyOrigin") or not existing.get("sources"):
@@ -113,12 +113,14 @@ class AggregateReadingService(CandidateSelectionPolicy):
     def book(self, user_id, book_id):
         book = self.repository.get(user_id, book_id)
         if not book:
-            if book_id.startswith("agg-"):
+            if book_id.startswith(("agg-", "import-")):
                 raise HTTPException(404, "书籍不在你的书库中")
             self.reader.book_target(book_id)
         return book
 
     async def upgrade_legacy(self, user_id, book):
+        if book and book.get("imported"):
+            raise HTTPException(409, "导入书籍的本地文件缺失，请重新导入附件")
         if not book or book.get("sources"):
             return book
         key = (user_id, book["bookId"])
@@ -270,13 +272,14 @@ class AggregateReadingService(CandidateSelectionPolicy):
 
     async def _aggregate(self, book, chapter):
         accepted, attempts = [], []
-        deadline = time.monotonic() + 45
         sources = list({s['sourceId']: s for s in book['sources']}.values())
+        budgets = {s['sourceId']: self._candidate_budget(s['sourceId']) for s in sources}
+        deadline = time.monotonic() + max([45, *budgets.values()])
         async def candidate(source):
             source_id = source['sourceId']
             audit = {"sourceId": source_id, "sourceName": source["sourceName"]}
             try:
-                async with asyncio.timeout(max(.01, min(20, deadline-time.monotonic()))):
+                async with asyncio.timeout(max(.01, min(budgets[source_id], deadline-time.monotonic()))):
                     origin = chapter.get('originBookId') or book.get('legacyOrigin')
                     if source['bookId'] == origin:
                         match = {**chapter, 'index': chapter['index']+1}
@@ -298,6 +301,10 @@ class AggregateReadingService(CandidateSelectionPolicy):
                     if classification['classification'] != 'full':
                         return None, {**audit, "status": "incomplete"}
                     return {"source_id": source_id, "content": content, "alignment_json": {"alignmentPassed": True, "alignmentReason": "title_matched"}}, {**audit, "status": "accepted"}
+            except HTTPException as exc:
+                if exc.status_code == 410:
+                    return None, {**audit, "status": "removed", "message": str(exc.detail)[:500]}
+                return None, {**audit, "status": "unavailable"}
             except Exception:
                 return None, {**audit, "status": "unavailable"}
         selected, consensus = None, []
@@ -317,6 +324,10 @@ class AggregateReadingService(CandidateSelectionPolicy):
         if selected is None:
             selected, consensus = await asyncio.to_thread(self._select_consistent_candidate, accepted, allow_degraded=True)
         if selected is None:
+            removed = [a for a in attempts if a["status"] == "removed"]
+            if removed:
+                message = "；".join(f"{a['sourceName']}：{a['message']}" for a in removed)
+                raise HTTPException(410 if len(removed) == len(attempts) else 502, message)
             raise HTTPException(502, "当前章没有可靠的多源正文；来源不可用、缺章或正文互相冲突，请稍后重试")
         support = next((c['supportCount'] for c in consensus if c['sourceId'] == selected['source_id']), 0)
         return {"index": chapter['index'], "title": chapter['title'], "content": selected['content'],
@@ -324,6 +335,20 @@ class AggregateReadingService(CandidateSelectionPolicy):
                     "selectedSourceName": next(s['sourceName'] for s in sources if s['sourceId'] == selected['source_id']),
                     "acceptedCount": len(accepted), "attemptedCount": len(attempts), "supportCount": support,
                     "consensus": consensus, "sources": attempts}}
+
+    def _candidate_budget(self, source_id):
+        """Honor the host's catalog and chapter budgets at the outer boundary.
+
+        A fixed 20-second wrapper otherwise cancels a valid paced chapter even
+        when its scheduler permits 35 seconds. Keep the combined wait bounded.
+        """
+        scheduler = self.reader.scheduler
+        plugin = getattr(scheduler, '_plugins', {}).get(source_id)
+        chapter_timeout = getattr(scheduler, 'timeout_for_plugin', None)
+        toc_timeout = getattr(scheduler, 'toc_timeout_for_plugin', None)
+        if not callable(chapter_timeout) or not callable(toc_timeout):
+            return 20.0
+        return min(120.0, max(20.0, chapter_timeout(plugin) + toc_timeout(plugin)))
 
 
 class PersonalAggregateReader:
@@ -339,6 +364,34 @@ class PersonalAggregateReader:
 
     async def toc(self, book_id, *, allow_empty=False):
         return await self.service.toc(self.user_id, book_id, allow_empty=allow_empty)
+
+    async def full_book(self, book_id, toc):
+        book = self.service.book(self.user_id, book_id)  # ownership before any network work
+        if not book:
+            raise HTTPException(404, "书籍不在你的书库中")
+        if not book.get("sources"):
+            return await self.service.reader.full_book(book_id, toc)
+        results = {}
+        for source in book["sources"]:
+            source_book = source["bookId"]
+            targets = [c for c in toc["chapters"]
+                       if (c.get("originBookId") or book.get("legacyOrigin")) == source_book]
+            if not targets:
+                continue
+            try:
+                source_id, _ = self.service.reader.book_target(source_book)
+                if "full_book" not in self.service.reader.plugin(source_id).capabilities:
+                    continue
+                source_toc = await self.service.reader.toc(source_book)
+                native = await self.service.reader.full_book(source_book, source_toc)
+                for chapter in targets:
+                    item = native.get(chapter["url"])
+                    if item and item["title"] == chapter["title"]:
+                        results[chapter["url"]] = {**item, "index": chapter["index"]}
+            except Exception:
+                # One unavailable native file must not block other owned sources.
+                continue
+        return results
 
     async def chapter_at(self, book_id, chapter):
         return await self.service.chapter_at(self.user_id, book_id, chapter)

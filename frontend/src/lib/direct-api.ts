@@ -1,15 +1,24 @@
-export interface DirectBook { bookId: string; sourceId: string; sourceName: string; name: string; author: string; intro?: string; coverUrl?: string; sourceCount?: number; sourceBookIds?: string[]; sources?: DirectBook[] }
+export interface DirectBook { bookId: string; sourceId: string; sourceName: string; name: string; author: string; intro?: string; coverUrl?: string; sourceCount?: number; sourceBookIds?: string[]; sources?: DirectBook[]; attachmentSource?: boolean; imported?: boolean; threadId?: string }
 export interface DirectSource { id: string; name: string; default?: boolean }
 export interface DirectChapter { index: number; title: string }
 export interface Progress { chapterIndex: number; position: number; revision: number }
 export interface SearchResult { sourceId: string; items: DirectBook[]; groups?: DirectBook[]; error?: { message: string } | string; latencyMs: number }
+
+function responseError(body: { detail?: unknown }, status: number, fallback: string): Error {
+  const detail = body.detail
+  if (typeof detail === "string" && detail.trim()) return new Error(detail)
+  if (detail && typeof detail === "object" && "message" in detail && typeof detail.message === "string" && detail.message.trim()) {
+    return new Error(detail.message)
+  }
+  return new Error(`${fallback} (${status})`)
+}
 
 export async function directRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`/api/direct${path}`, { credentials: "same-origin", ...init,
     headers: { "Content-Type": "application/json", ...init.headers } })
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
-    throw new Error(typeof body.detail === "string" ? body.detail : `请求失败 (${response.status})`)
+    throw responseError(body, response.status, "请求失败")
   }
   return response.json() as Promise<T>
 }
@@ -20,7 +29,7 @@ export async function streamSearch(keyword: string, sources: string[], page: num
   const response = await fetch(`/api/direct/search?${params}`, { credentials: "same-origin", signal })
   if (!response.ok || !response.body) {
     const body = await response.json().catch(() => ({}))
-    throw new Error(typeof body.detail === "string" ? body.detail : `搜索失败 (${response.status})`)
+    throw responseError(body, response.status, "搜索失败")
   }
   const reader = response.body.getReader()
   const decoder = new TextDecoder()

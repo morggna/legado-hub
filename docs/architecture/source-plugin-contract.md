@@ -837,3 +837,27 @@ Rules:
 - Prefer shared runtime dependencies over per-plugin duplication.
 - If a plugin needs a special dependency, add `requirements.txt` in the plugin directory and document it in the plugin README.
 - Report dependency installation failures with the exact command and error.
+
+## Optional native full-book download (1.0 extension)
+
+`full_book` is an optional capability, used only after an explicit full-book download request.
+Existing plugins remain unchanged. Implement `async full_book(ctx, book_url, chapters, *, name) -> list[dict]`.
+`chapters` is the host's frozen source TOC, with `title` and `chapterUrl`. Return chapter-shaped
+objects (`chapterUrl`, `title`, `content`, optional `extra`, `authRequired`, `isPaid`) keyed by
+those exact URLs and titles, never by position alone. Omit unavailable/illustration-only bodies.
+The plugin must validate the site's file identity, ordered complete TOC and end marker before
+returning any text; stale, ambiguous, truncated or login/error documents must raise a parse error.
+Use `ctx.access`; credentials and scheduling remain host-owned. `accessStrategy.full_book` is allowed.
+
+The host applies a cancellable operation timeout and source rate limiter, validates the whole
+result before caching (unique known URLs, matching titles, no paid/auth-required content,
+2 MiB per chapter and 256 MiB total), and fills omitted chapters through normal reading.
+Unsupported or failed native downloads fall back to chapters. Aggregate books may reuse only
+entries whose exact source book, chapter URL and title match the frozen personal TOC; no fuzzy
+or positional alignment. Completed chapter caches survive pause/resume and remain user-scoped.
+
+`SOURCE_REMOVED` indicates an explicit site notice that the content has been removed. The host must surface the reason, never cache the notice as prose, and must not use native files to bypass that notice.
+
+Native-file adapters may reconcile an evidenced, site-specific typography difference in heading lookup (for Wenku8, `•` and `·` between name components). This must preserve characters, ordering, uniqueness and source TOC identity; ambiguous normalized headings fail validation. Returned titles remain exactly the input TOC titles. Do not use fuzzy similarity or remove arbitrary punctuation to force a match.
+
+Wenku8 native exports can retain numeric HTML character references in headings and can contain genuinely repeated identical TOC titles (e.g. several Interludes within one volume). Decode evidenced numeric references for heading lookup only; leave prose untouched. Repeated identical headings are allowed only when the entire observed heading sequence (including all occurrences and anchors) equals the frozen source TOC sequence. Bind each occurrence back to its unique input chapter URL. A missing/extra/reordered occurrence or a normalization collision between distinct original titles must fail; a chapter index or title similarity alone is never sufficient.

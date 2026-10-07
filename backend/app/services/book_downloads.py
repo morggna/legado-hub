@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import shutil
 from pathlib import Path
 
@@ -136,24 +137,58 @@ class BookDownloadService:
             self.write_json(directory / "detail.json", detail)
             self.write_json(directory / "toc.json", toc)
             size = 0
+            pending = []
             for chapter in chapters:
-                index = chapter["index"]
-                path = directory / f"chapter-{index}.json"
+                path = directory / f"chapter-{chapter['index']}.json"
                 cached = self.cached(user_id, book_id, path.name)
-                if not cached or cached.get("url") != chapter["url"]:
-                    # Use the frozen URL from this job's validated directory, not
-                    # an index from a later refreshed TOC during a long download.
-                    result = await reader.chapter_at(book_id, chapter)
-                    result["url"] = chapter["url"]
-                    if len(result["content"].encode()) > 2 * 1024 * 1024:
-                        raise HTTPException(400, "单章正文过大")
-                    self.write_json(path, result)
+                if cached and cached.get("url") == chapter["url"]:
+                    size += path.stat().st_size
+                    completed += 1
+                else:
+                    pending.append(chapter)
+            if size > 256 * 1024 * 1024:
+                raise HTTPException(400, "整本缓存超过 256 MB")
+            self.repository.set_download(user_id, book_id, "running", completed, total)
+
+            native = {}
+            operation = getattr(reader, "full_book", None)
+            if pending and operation:
+                try:
+                    native = await operation(book_id, toc)
+                    logging.getLogger(__name__).info("Native download supplied %s/%s chapters", len(native), total)
+                except Exception as exc:
+                    native = {}
+                    logging.getLogger(__name__).warning("Native download fallback: %s", type(exc).__name__)
+
+            async def save_chapter(chapter, result):
+                nonlocal size, completed
+                result = {**result, "url": chapter["url"]}
+                if len(result["content"].encode()) > 2 * 1024 * 1024:
+                    raise HTTPException(400, "单章正文过大")
+                path = directory / f"chapter-{chapter['index']}.json"
+                self.write_json(path, result)
                 size += path.stat().st_size
                 if size > 256 * 1024 * 1024:
                     raise HTTPException(400, "整本缓存超过 256 MB")
                 completed += 1
                 self.repository.set_download(user_id, book_id, "running", completed, total)
-                await asyncio.sleep(0)  # Allow stop/read requests between chapters.
+                await asyncio.sleep(0)  # Allow pause/read requests during bulk writes.
+
+            # Persist every native text chapter before waiting for any missing
+            # illustration/body. Progress counts all saved chapters, and text
+            # remains available even if a later image request is paused/fails.
+            remaining = []
+            for chapter in pending:
+                result = native.pop(chapter["url"], None)
+                if result:
+                    await save_chapter(chapter, result)
+                else:
+                    remaining.append(chapter)
+            native.clear()
+            for chapter in remaining:
+                # Use the frozen URL, never an index from a refreshed TOC.
+                result = await reader.chapter_at(book_id, chapter)
+                await save_chapter(chapter, result)
             temp = directory / "book.tmp"
             with temp.open("w", encoding="utf-8") as output:
                 output.write(f"{detail['name']}\n{detail.get('author', '')}\n\n")

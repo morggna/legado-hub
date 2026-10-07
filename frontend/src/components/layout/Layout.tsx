@@ -81,7 +81,7 @@ export function Layout() {
   return (
     // h-screen + min-h-0 keeps scroll inside <main> so tab height changes never
     // toggle the window scrollbar (which shifts centered content left/right).
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="app-shell flex h-dvh overflow-hidden bg-slate-50">
       <aside className="hidden h-full w-64 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
         <div className="flex h-16 flex-shrink-0 items-center px-6">
           <BookOpen className="h-6 w-6 text-slate-800" />

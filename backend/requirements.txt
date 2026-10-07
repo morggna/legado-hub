@@ -17,3 +17,5 @@ ddgs>=9.0.0
 opencc-python-reimplemented>=0.1.7
 playwright>=1.44.0
 requests>=2.31.0
+# Attachment sources: bounded in-memory RAR/ZIP/TXT import (native libarchive).
+libarchive-c>=5.3,<6

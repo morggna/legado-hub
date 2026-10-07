@@ -1,5 +1,10 @@
 .git
 .venv
+.env
+.env.*
+!.env.example
+**/legend-proxy.json
+deploy/direct/state
 __pycache__
 .pytest_cache
 backend/data

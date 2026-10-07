@@ -115,7 +115,9 @@ def test_docker_plugin_delivery_contract() -> None:
     gitignore = (repo_root / ".gitignore").read_text(encoding="utf-8").splitlines()
     dockerfile = (repo_root / "Dockerfile").read_text(encoding="utf-8")
     entrypoint = (repo_root / "deploy/docker/entrypoint.sh").read_text(encoding="utf-8")
-    readme = (repo_root / "README.md").read_text(encoding="utf-8")
+    # This contract covers the preserved upstream Docker deployment. The fork's
+    # root README documents its source-built, single-entrypoint deployment.
+    readme = (repo_root / "docs/architecture/upstream-readme.md").read_text(encoding="utf-8")
     compose = yaml.safe_load((repo_root / "docker-compose.yml").read_text(encoding="utf-8"))
     plugin_mount = yaml.safe_load(
         (repo_root / "docker-compose.plugins.yml").read_text(encoding="utf-8")

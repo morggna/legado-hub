@@ -144,6 +144,25 @@ async def test_source_failure_falls_back_and_all_conflicting_sources_fail(env):
     assert exc.value.status_code == 502
 
 
+async def test_paced_chapter_uses_host_budget_in_aggregate_wrapper(env, monkeypatch):
+    service, source, user, _ = env
+    source.timeout_for_plugin = lambda plugin: 35.0
+    source.toc_timeout_for_plugin = lambda plugin: 40.0
+    assert service._candidate_budget('a') == 75.0
+    book = await service.add(user, ids('a'))
+    budgets = []
+    original = asyncio.timeout
+    def capture(seconds):
+        budgets.append(seconds)
+        return original(seconds)
+    monkeypatch.setattr('app.services.direct_aggregation.asyncio.timeout', capture)
+    result = await service.for_user(user).chapter(book['bookId'], 0)
+    assert result['content'] == BODY
+    assert any(70 < b <= 75 for b in budgets)
+    source.timeout_for_plugin = lambda plugin: 500.0
+    assert service._candidate_budget('a') == 120.0
+
+
 async def test_expands_to_fourth_source_if_initial_consensus_not_stable(env):
     service, source, user, _ = env
     book = await service.add(user,ids('abcd'))
@@ -292,3 +311,24 @@ async def test_overview_all_catalogs_unavailable_still_shows_lines_and_can_retry
         assert all(s['status'] == 'unavailable' for s in result['sources'])
         assert service.repository.aggregate_toc(user,book['bookId'])[0] is None
         assert not any(c[0]=='chapter' for c in source.calls)
+
+
+async def test_site_withdrawal_reason_survives_aggregation_and_other_sources_still_work(env):
+    service, scheduler, user, _ = env
+    book = await service.add(user, ids('a'))
+    original = scheduler.chapter
+    async def chapter(source, url):
+        if source == 'a':
+            return {'debug': {'error': {'code': 'SOURCE_REMOVED', 'message': '原站因版权问题已停止提供本书阅读，目录仍保留'}}}
+        return await original(source, url)
+    scheduler.chapter = chapter
+    toc = await service.toc(user, book['bookId'])
+    with pytest.raises(HTTPException) as error:
+        await service.chapter_at(user, book['bookId'], toc['chapters'][0])
+    assert error.value.status_code == 410
+    assert '版权问题' in error.value.detail
+    assert service.repository.aggregate_chapter(user, book['bookId'], 0) is None
+    await service.add(user, ids('b'))
+    result = await service.chapter_at(user, book['bookId'], toc['chapters'][0])
+    assert result['content'] == BODY
+    assert result['aggregation']['selectedSourceId'] == 'b'

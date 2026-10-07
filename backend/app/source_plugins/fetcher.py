@@ -9,7 +9,7 @@ import asyncio
 import logging
 import re
 import threading
-from typing import Any
+from typing import Any, Awaitable, Callable
 from types import SimpleNamespace
 
 import httpx
@@ -98,6 +98,7 @@ class Fetcher:
         cookies: dict[str, dict[str, str]] | None = None,
         proxy_mode: str = "auto",
         proxy_config: dict | None = None,
+        before_request: Callable[[str], Awaitable[None]] | None = None,
     ):
         self.user_agent = user_agent or get_default_user_agent()
         self.timeout = timeout
@@ -108,6 +109,7 @@ class Fetcher:
         self._client: httpx.AsyncClient | None = None
         self._owns_client = False
         self._traces: list[dict] = []
+        self._before_request = before_request
 
     async def _client_instance(self, proxy_url: str | None = None) -> httpx.AsyncClient:
         actual_proxy_url = self.proxy_url if proxy_url is None else proxy_url
@@ -252,6 +254,8 @@ class Fetcher:
         impersonate: str | None = None,
         proxy: bool = True,
     ) -> tuple[str, Any]:
+        if self._before_request is not None:
+            await self._before_request(url)
         if impersonate:
             return await self._fetch_raw_impersonate(url, method, params, data, json, headers, timeout, impersonate, proxy)
         if proxy is False and self.proxy_url:

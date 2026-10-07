@@ -1,5 +1,6 @@
 """One authenticated browser entrypoint for anonymous third-party source reading."""
 import json
+import time
 from collections import Counter
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -12,8 +13,11 @@ from app.services.user_auth import auth_service
 from app.services.direct_reading import direct_reading
 from app.services.direct_aggregation import aggregate_reading, grouped_books
 from app.storage.direct_reading import direct_repository
+from app.api import attachment_sources
+from app.services.txtnovel_import import txtnovel_import, SOURCE_ID, SOURCE_NAME
 
 router = APIRouter(prefix="/api/direct")
+router.include_router(attachment_sources.router)
 _active_searches = Counter()
 
 
@@ -26,8 +30,11 @@ class ProgressRequest(BaseModel):
 
 @router.get("/sources")
 def sources(request: Request):
-    auth_service.require_user(request)
-    return {"items": direct_reading.sources()}
+    user = auth_service.require_user(request)
+    items = direct_reading.sources()
+    if txtnovel_import.status(user.user_id)["bound"]:
+        items.append({"id": SOURCE_ID, "name": SOURCE_NAME, "attachmentSource": True})
+    return {"items": items}
 
 
 @router.get("/search")
@@ -39,7 +46,10 @@ async def search(request: Request, keyword: str = Query(min_length=1, max_length
     if not source_ids or len(source_ids) > 64:
         raise HTTPException(400, "请选择 1 至 64 个书源")
     for source_id in source_ids:
-        direct_reading.plugin(source_id)
+        if source_id == SOURCE_ID:
+            txtnovel_import.session(user.user_id)
+        else:
+            direct_reading.plugin(source_id)
     if _active_searches[user.user_id] >= 2:
         raise HTTPException(429, "请先停止已有搜索")
     _active_searches[user.user_id] += 1
@@ -54,9 +64,20 @@ async def search(request: Request, keyword: str = Query(min_length=1, max_length
     async def stream():
         items = []
         try:
-            async for result in direct_reading.search(keyword.strip(), source_ids, page):
+            async for result in direct_reading.search(keyword.strip(), [s for s in source_ids if s != SOURCE_ID], page):
                 items.extend(result["items"])
                 result["groups"] = grouped_books(items, keyword.strip())
+                yield "data: " + json.dumps(result, ensure_ascii=False) + "\n\n"
+            if SOURCE_ID in source_ids:
+                started = time.monotonic()
+                try:
+                    async with attachment_sources.one_operation(user.user_id):
+                        attachments = await txtnovel_import.search(user.user_id, keyword.strip(), page)
+                    result = {"sourceId": SOURCE_ID, "items": attachments,
+                              "groups": [*grouped_books(items, keyword.strip()), *attachments]}
+                except Exception as exc:
+                    result = {"sourceId": SOURCE_ID, "items": [], "error": {"message": str(getattr(exc, "detail", "书香门第搜索暂时不可用"))}}
+                result["latencyMs"] = round((time.monotonic()-started)*1000)
                 yield "data: " + json.dumps(result, ensure_ascii=False) + "\n\n"
             yield 'event: done\ndata: {}\n\n'
         finally:

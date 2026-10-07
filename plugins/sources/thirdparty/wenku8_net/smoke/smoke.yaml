@@ -1,0 +1,84 @@
+keyword: 败北女角
+searchProviderHits:
+- title: 败北女角太多了！ (败犬女主太多了！) - 雨森焚火 - 小学馆 - 轻小说...
+  url: https://www.wenku8.net/book/3057.htm
+  provider: duckduckgo_ddgs
+  rank: 1
+  snippet: 败北女角太多了！ (败犬女主太多了！)是雨森焚火所写的轻小说,轻小说文库提供败北女角太多了！ (败犬女主太多了！)在线阅读与TXT电子书下载,支持手机wap访问
+  matched_pattern: /book/\d+\.htm
+- title: 败犬之牙FANG OF UNDERDOG - 朝浦 - 集英社 - 轻小说文库
+  url: https://www.wenku8.net/book/1956.htm
+  provider: duckduckgo_ddgs
+  rank: 2
+  snippet: 败犬之牙FANG OF UNDERDOG是朝浦所写的轻小说,轻小说文库提供败犬之牙FANG OF UNDERDOG在线阅读与TXT电子书下载,支持手机wap访问
+  matched_pattern: /book/\d+\.htm
+- title: 败给性格恶劣的天才儿时玩伴，初体验全部被她夺走 (败给了性格恶劣的...
+  url: https://www.wenku8.net/book/3585.htm
+  provider: duckduckgo_ddgs
+  rank: 3
+  snippet: 败给性格恶劣的天才儿时玩伴，初体验全部被她夺走 (败给了性格恶劣的天才青梅，初体验全部被夺走这件事)是犬甘あんず所写的轻小说,轻小说文库提供败给性格恶劣的天才儿时玩伴，初体验全部被她夺走
+    (败给了性格恶劣的天才青梅，初体验全部被夺走这件事)在线阅读与TXT电子书下载,支持手机wap ...
+  matched_pattern: /book/\d+\.htm
+- title: 同为败犬，绝对对对对对要幸福啊！ - としぞう - Fami通文库 - 轻小说...
+  url: https://www.wenku8.net/book/4299.htm
+  provider: duckduckgo_ddgs
+  rank: 4
+  snippet: Jun 13, 2026 · 作品热度：E级，当前热度上升指数为：E级 最近章节： 第一卷 插图 内容简介： 「让我们像条败犬相互舔砥伤口吧？
+    」 经过多年的单相思，绵贯天羽终于如愿以偿地和青梅竹马鹫崎加恋成为了恋人。 ——却在交往仅一个月后，目击了加恋出轨的现场！
+  matched_pattern: /book/\d+\.htm
+- title: 少女奇案 (少女事件) - 西条阳 - 小学馆 - 轻小说文库
+  url: https://www.wenku8.net/book/3649.htm
+  provider: duckduckgo_ddgs
+  rank: 5
+  snippet: 少女奇案 (少女事件)是西条阳所写的轻小说,轻小说文库提供少女奇案 (少女事件)在线阅读与TXT电子书下载,支持手机wap访问
+  matched_pattern: /book/\d+\.htm
+- title: 七日的喰神 - カミツキレイニー - 小学馆 - 轻小说文库
+  url: https://www.wenku8.net/book/2348.htm
+  provider: duckduckgo_ddgs
+  rank: 6
+  snippet: 七日的喰神是カミツキレイニー所写的轻小说,轻小说文库提供七日的喰神在线阅读与TXT电子书下载,支持手机wap访问
+  matched_pattern: /book/\d+\.htm
+- title: 堕天的狗神 -SLASHDOG- - 石踏一荣 - 富士见文库 - 轻小说文库
+  url: https://www.wenku8.net/book/2524.htm
+  provider: duckduckgo_ddgs
+  rank: 7
+  snippet: 堕天的狗神 -SLASHDOG-是石踏一荣所写的轻小说,轻小说文库提供堕天的狗神 -SLASHDOG-在线阅读与TXT电子书下载,支持手机wap访问
+  matched_pattern: /book/\d+\.htm
+fixtures:
+  search:
+    url: https://www.wenku8.net/
+    file: search.json
+  detail:
+    url: https://www.wenku8.net/book/3057.htm
+    file: detail.html
+  toc:
+    url: https://www.wenku8.net/novel/3/3057/index.htm
+    file: toc.html
+  chapter:
+    url: https://www.wenku8.net/novel/3/3057/125416.htm
+    file: chapter.html
+extraFixtures:
+- url: https://www.wenku8.net/novel/3/3057/155192.htm
+  file: middle.html
+- url: https://www.wenku8.net/novel/3/3057/179980.htm
+  file: last.html
+- url: https://www.wenku8.net/novel/3/3057/125425.htm
+  file: illustrations.html
+expect:
+  search:
+    minResults: 1
+    firstName: 败北女角太多了！(败犬女主太多了！)
+  detail:
+    name: 败北女角太多了！(败犬女主太多了！)
+    author: 雨森焚火
+    hasTocUrl: true
+  toc:
+    complete: true
+    expectedCount: 234
+    firstTitleContains: 第一卷 序
+    lastTitleContains: 丰桥市建市120周年
+    requireUniqueChapterUrls: true
+    requireSequentialIndexes: true
+  chapter:
+    minContentLength: 250
+    titleContains: 第一卷 序

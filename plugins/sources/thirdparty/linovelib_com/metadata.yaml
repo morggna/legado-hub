@@ -1,0 +1,38 @@
+contractVersion: "1.0"
+id: linovelib_com
+name: 哔哩轻小说
+author: Yunwei
+version: 0.1.1
+type: source
+domains: [linovelib.com, bilinovel.com, bilinovel.net, img3.readpai.com]
+baseUrls: [https://www.bilinovel.com]
+capabilities: [search, detail, toc, chapter]
+enabled: true
+language: zh-CN
+rateLimit:
+  perHostConcurrency: 1
+  minIntervalMs: 2000
+proxy:
+  mode: always
+  required: true
+browser:
+  mode: none
+  reason: "公开手机版 HTML；正文排序参数取自当前版本脚本，不执行脚本"
+auth:
+  mode: none
+  cookieDomains: []
+content:
+  access: free
+tags: [html, no-login, light-novel, search_provider, paginated]
+accessStrategy:
+  search: search_provider
+  detail: stealth_http
+  toc: stealth_http
+  chapter: stealth_http
+searchProvider:
+  providerOrder: [duckduckgo_ddgs]
+  targetDomain: www.linovelib.com
+  querySitePath: /novel/
+  urlPatterns:
+    - /novel/\d+\.html
+    - /novel/\d+/catalog

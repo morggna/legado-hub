@@ -76,7 +76,7 @@ class PluginMetadata:
             errors.append("name is required")
         if self.type != "source":
             errors.append(f"type must be 'source', got {self.type}")
-        valid_caps = {"search", "detail", "toc", "chapter", "chapter_reviews", "explore", "auth"}
+        valid_caps = {"search", "detail", "toc", "chapter", "chapter_reviews", "explore", "auth", "full_book"}
         for cap in self.capabilities:
             if cap not in valid_caps:
                 errors.append(f"invalid capability: {cap}")
@@ -103,7 +103,7 @@ class PluginMetadata:
             "local_file",
         }
         for stage, mode in self.access_strategy.items():
-            if stage not in {"search", "detail", "toc", "chapter", "explore"}:
+            if stage not in {"search", "detail", "toc", "chapter", "explore", "full_book"}:
                 errors.append(f"invalid accessStrategy stage: {stage}")
             if mode not in valid_strategy:
                 errors.append(f"invalid accessStrategy.{stage}: {mode}")

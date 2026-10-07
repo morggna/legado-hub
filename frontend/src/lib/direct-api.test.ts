@@ -17,3 +17,13 @@ describe("streamSearch", () => {
     await expect(streamSearch("书", [], 1, new AbortController().signal, vi.fn())).rejects.toThrow("请选择书源")
   })
 })
+
+import { directRequest } from "./direct-api"
+it("shows the structured site removal reason returned by the global error handler", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({detail: {message: "轻小说文库：原站因版权问题已停止提供本书阅读", code: "HTTP_410"}}), {status: 410})))
+  await expect(directRequest("/books/test/chapters/0")).rejects.toThrow("原站因版权问题")
+})
+it("keeps a status fallback for a gateway error without JSON", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("Bad Gateway", {status: 502})))
+  await expect(directRequest("/books/test/chapters/0")).rejects.toThrow("请求失败 (502)")
+})

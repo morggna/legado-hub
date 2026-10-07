@@ -1,0 +1,8 @@
+# Bounded runtime upgrade for the existing deployed image. Normal full builds
+# already include these files; this preserves its frontend and dependencies.
+ARG BASE_IMAGE=local/legadohub-direct:20261007-txtnovel
+FROM ${BASE_IMAGE}
+COPY backend/app/source_plugins/fetcher.py /app/backend/app/source_plugins/fetcher.py
+COPY backend/app/source_plugins/scheduler.py /app/backend/app/source_plugins/scheduler.py
+COPY backend/app/services/direct_aggregation.py /app/backend/app/services/direct_aggregation.py
+COPY --chown=1000:1000 plugins/sources/thirdparty/linovelib_com/ /opt/legadohub/plugins/thirdparty/linovelib_com/

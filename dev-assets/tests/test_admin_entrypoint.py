@@ -60,6 +60,11 @@ def isolated_apps(monkeypatch, tmp_path):
     (frontend_dist / "assets" / "app.js").write_text("window.LEGADOHUB = true", encoding="utf-8")
     (frontend_dist / "favicon.svg").write_text("<svg></svg>", encoding="utf-8")
     (frontend_dist / "icons.svg").write_text("<svg></svg>", encoding="utf-8")
+    (frontend_dist / "manifest.webmanifest").write_text('{"display":"standalone","start_url":"/console/library"}', encoding="utf-8")
+    (frontend_dist / "sw.js").write_text('self.addEventListener("fetch", () => {})', encoding="utf-8")
+    (frontend_dist / "apple-touch-icon.png").write_bytes(b"PNG fixture")
+    (frontend_dist / "app-icons").mkdir()
+    (frontend_dist / "app-icons" / "icon-192.png").write_bytes(b"PNG fixture")
     monkeypatch.setattr(main_module, "FRONTEND_DIST", frontend_dist)
 
     monkeypatch.delenv("LEGADOHUB_PUBLIC_BASE_URL", raising=False)
@@ -428,3 +433,18 @@ def test_admin_enter_redirect_without_mapping_keeps_legacy_reader_port(monkeypat
     )
     assert response.status_code == 307
     assert response.headers["location"].startswith("http://nas.lan:8765/api/auth/access/enter")
+
+
+@pytest.mark.parametrize("index,origin", [(0,PUBLIC_ORIGIN),(1,ADMIN_ORIGIN)])
+def test_pwa_assets_available_before_login_with_correct_types_and_update_headers(isolated_apps,index,origin):
+    client=TestClient(isolated_apps[index],base_url=origin)
+    for path,media in [("/manifest.webmanifest","application/manifest+json"),("/app-worker","application/javascript"),("/apple-touch-icon.png","image/png")]:
+        response=client.get(path)
+        assert response.status_code==200
+        assert response.headers["content-type"].startswith(media)
+        assert response.headers["cache-control"]=="no-cache"
+    manifest=client.get("/manifest.webmanifest").json()
+    assert manifest["display"]=="standalone"
+    assert client.get(manifest["start_url"]).status_code==200
+    assert client.get("/app-icons/icon-192.png").status_code==200
+    assert client.get("/app-icons/missing.png").status_code==404

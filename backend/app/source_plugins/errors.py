@@ -36,6 +36,11 @@ class FetchHttp5xx(Exception):
     code = "FETCH_HTTP_5XX"
 
 
+class SourceRemoved(Exception):
+    """Site explicitly withdrew access to this book's content."""
+    code = "SOURCE_REMOVED"
+
+
 class ParseEmpty(Exception):
     """Parser returned empty result."""
     code = "PARSE_EMPTY"
@@ -124,6 +129,7 @@ ERROR_CODE_MAP: dict[str, type[Exception]] = {
     "FETCH_NETWORK_ERROR": FetchNetworkError,
     "FETCH_HTTP_4XX": FetchHttp4xx,
     "FETCH_HTTP_5XX": FetchHttp5xx,
+    "SOURCE_REMOVED": SourceRemoved,
     "PARSE_EMPTY": ParseEmpty,
     "PARSE_ERROR": ParseError,
     "AUTH_REQUIRED": AuthRequired,
@@ -142,6 +148,7 @@ ERROR_HINTS: dict[str, str] = {
     "FETCH_HTTP_4XX": "检查请求路径、参数、Headers、登录状态或站点反爬规则。",
     "FETCH_HTTP_5XX": "目标站点服务异常，可稍后重试或切换来源。",
     "PLUGIN_TIMEOUT": "检查站点响应时间、解析逻辑耗时或调低单源并发。",
+    "SOURCE_REMOVED": "原站已停止提供该书正文，可选择其他可用书源或正版渠道。",
     "PARSE_EMPTY": "检查 selector、fixture HTML 或目标站 DOM 是否变化。",
     "PARSE_ERROR": "检查解析逻辑和返回数据结构。",
     "AUTH_REQUIRED": "该内容需要认证，先完成插件登录流程。",

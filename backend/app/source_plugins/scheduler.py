@@ -6,6 +6,7 @@ import asyncio
 import json
 import time
 from typing import Any, Awaitable, Callable
+from urllib.parse import urlsplit
 
 from app.core.app_config import AppConfig
 from app.services.cookie_store import CookieStore
@@ -39,6 +40,24 @@ class _PluginRateLimiter:
         self._interval_lock = asyncio.Lock()
         self._min_interval_seconds = min_interval_ms / 1000.0
         self._next_start_at = 0.0
+        self._request_locks: dict[str, asyncio.Lock] = {}
+        self._next_request_at: dict[str, float] = {}
+
+    async def wait_for_request(self, url: str) -> None:
+        """Pace each HTTP attempt, including chapter pages and proxy retries.
+
+        This state is shared across per-operation fetchers. The operational
+        semaphore still bounds plugin concurrency; different request hosts do
+        not consume each other's interval.
+        """
+        if not self._min_interval_seconds:
+            return
+        host = (urlsplit(url).hostname or "").lower()
+        lock = self._request_locks.setdefault(host, asyncio.Lock())
+        async with lock:
+            while (wait := self._next_request_at.get(host, 0.0) - time.monotonic()) > 0:
+                await asyncio.sleep(wait)
+            self._next_request_at[host] = time.monotonic() + self._min_interval_seconds
 
     async def run(self, operation: Callable[[], Awaitable[Any]]) -> Any:
         async with self._semaphore:
@@ -167,12 +186,14 @@ class PluginScheduler:
         proxy_cfg = self.config.get("proxy", {})
         proxy_url = self._resolve_proxy_url(plugin)
         proxy_mode = (plugin.metadata.proxy or {}).get("mode", "auto") if plugin else "auto"
+        limiter = self._rate_limiter_for(plugin) if plugin else None
         return Fetcher(
             user_agent=self.config.get("default_user_agent", ""),
             timeout=self.config.get("source_timeout_seconds", 20.0),
             proxy_url=proxy_url,
             proxy_mode=proxy_mode,
             proxy_config=proxy_cfg,
+            before_request=limiter.wait_for_request if limiter else None,
         )
 
     def _make_ctx(self, plugin_id: str) -> PluginContext:
@@ -603,6 +624,19 @@ class PluginScheduler:
         except Exception as exc:
             err = self._failure_for_exception(plugin, "chapter", exc)
             return {"implemented": True, "chapterId": "", "title": "", "content": "", "debug": {"error": err}}
+        finally:
+            await ctx._fetcher.close()
+
+    async def full_book(self, source_id: str, book_url: str, chapters: list[dict], *, name: str) -> list[dict]:
+        plugin = self._plugins.get(source_id)
+        if not plugin or not plugin.metadata.enabled or "full_book" not in plugin.capabilities:
+            return []
+        ctx = self._make_ctx(source_id)
+        try:
+            return await self._call_plugin(
+                plugin, lambda: plugin.source.full_book(ctx, book_url, chapters, name=name),
+                timeout=max(60.0, self.toc_timeout_for_plugin(plugin)),
+            )
         finally:
             await ctx._fetcher.close()
 

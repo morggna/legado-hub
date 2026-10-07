@@ -26,7 +26,7 @@ COPY backend/requirements.txt /app/backend/requirements.txt
 RUN python -m pip install --no-cache-dir -r /app/backend/requirements.txt \
     && python -m playwright install --with-deps chromium \
     && apt-get update \
-    && apt-get install -y --no-install-recommends gosu \
+    && apt-get install -y --no-install-recommends gosu libarchive13 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid ${APP_GID} legadohub \
     && useradd --uid ${APP_UID} --gid ${APP_GID} --create-home legadohub \

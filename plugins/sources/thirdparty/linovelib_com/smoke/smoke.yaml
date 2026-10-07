@@ -1,0 +1,60 @@
+keyword: 败北女角
+searchProviderHits:
+- title: 败北女角太多了！_雨森焚火作品_小学馆_哔哩轻小说
+  url: https://www.linovelib.com/novel/3095.html
+  provider: duckduckgo_ddgs
+  rank: 1
+fixtures:
+  search:
+    url: https://www.bilinovel.com/
+    file: search.json
+  detail:
+    url: https://www.bilinovel.com/novel/3095.html
+    file: detail.html
+  toc:
+    url: https://www.bilinovel.com/novel/3095/catalog
+    file: toc.html
+  chapter:
+    url: https://www.bilinovel.com/novel/3095/154931.html
+    file: chapter.html
+extraFixtures:
+- url: https://www.bilinovel.com/novel/3095/154932.html
+  file: prologue.html
+- url: https://www.bilinovel.com/novel/3095/154933.html
+  file: long.html
+- url: https://www.bilinovel.com/themes/zhmb/js/chapterlog.js?v1006c1.82
+  file: chapterlog.js
+- url: https://www.bilinovel.com/novel/3095/154933_2.html
+  file: page2.html
+- url: https://www.bilinovel.com/novel/3095/154933_3.html
+  file: page3.html
+- url: https://www.bilinovel.com/novel/3095/154933_4.html
+  file: page4.html
+- url: https://www.bilinovel.com/novel/3095/154933_5.html
+  file: page5.html
+- url: https://www.bilinovel.com/novel/3095/154933_6.html
+  file: page6.html
+- url: https://www.bilinovel.com/novel/3095/154933_7.html
+  file: page7.html
+- url: https://www.bilinovel.com/novel/3095/154933_8.html
+  file: page8.html
+- url: https://www.bilinovel.com/novel/3095/154933_9.html
+  file: page9.html
+expect:
+  search:
+    minResults: 1
+    firstName: 败北女角太多了！
+  detail:
+    name: 败北女角太多了！
+    author: 雨森焚火
+    hasTocUrl: true
+  toc:
+    complete: true
+    expectedCount: 221
+    firstTitleContains: 插图
+    lastTitleContains: 丰桥市建市120周年
+    requireUniqueChapterUrls: true
+    requireSequentialIndexes: true
+  chapter:
+    minContentLength: 250
+    titleContains: 插图

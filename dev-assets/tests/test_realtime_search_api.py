@@ -1156,3 +1156,76 @@ async def test_scheduler_rate_limiter_rechecks_after_early_wakeup(monkeypatch):
 
     assert len(sleeps) == 2
     assert starts[1] - starts[0] >= 0.02
+
+
+@pytest.mark.asyncio
+async def test_http_pages_are_paced_across_operation_fetchers(monkeypatch):
+    """A chapter's many requests cannot burst through the operation limiter."""
+    import httpx
+
+    metadata = PluginMetadata.from_dict({
+        "contractVersion": "1.0", "id": "paced_pages", "name": "分页测试源",
+        "version": "1.0.0", "type": "source", "domains": ["example.test"],
+        "baseUrls": ["https://example.test"], "capabilities": ["chapter"],
+        "rateLimit": {"perHostConcurrency": 2, "minIntervalMs": 20},
+    })
+    plugin = LoadedPlugin(metadata=metadata, module=None, source=object(), capabilities=["chapter"])
+    class Loader:
+        def load_all(self):
+            return {metadata.id: plugin}
+    scheduler = PluginScheduler(loader=Loader(), config={})
+    starts = []
+    async def handle(request):
+        starts.append(asyncio.get_running_loop().time())
+        return httpx.Response(200, text="完整正文", request=request)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        async def client_instance(proxy_url=None):
+            return client
+        fetchers = [scheduler._make_fetcher(plugin), scheduler._make_fetcher(plugin)]
+        for fetcher in fetchers:
+            monkeypatch.setattr(fetcher, "_client_instance", client_instance)
+        await asyncio.gather(*[
+            fetchers[i % 2].fetch_text(f"https://example.test/page/{i}")
+            for i in range(4)
+        ])
+    assert len(starts) == 4
+    assert min(b - a for a, b in zip(starts, starts[1:])) >= 0.015
+
+
+@pytest.mark.asyncio
+async def test_request_interval_is_per_host_and_rechecks_early_wake(monkeypatch):
+    now, sleeps = 0.0, []
+    async def early_sleep(seconds):
+        nonlocal now
+        sleeps.append(seconds)
+        now += seconds / 2 if len(sleeps) == 1 else seconds
+    monkeypatch.setattr(scheduler_module, "time", SimpleNamespace(monotonic=lambda: now))
+    monkeypatch.setattr(scheduler_module, "asyncio", SimpleNamespace(Lock=asyncio.Lock, Semaphore=asyncio.Semaphore, sleep=early_sleep))
+    limiter = scheduler_module._PluginRateLimiter(concurrency=1, min_interval_ms=20)
+    await limiter.wait_for_request("https://a.test/chapter")
+    await limiter.wait_for_request("https://b.test/script")
+    assert now == 0
+    await limiter.wait_for_request("https://a.test/page2")
+    assert now >= 0.02 and len(sleeps) == 2
+
+
+@pytest.mark.asyncio
+async def test_impersonated_proxy_retry_also_uses_request_pacer(monkeypatch):
+    import httpx
+    from app.source_plugins.fetcher import Fetcher
+    from app.source_plugins.errors import RateLimited
+    attempts, starts = [], []
+    async def pace(url):
+        starts.append(url)
+    fetcher = Fetcher(proxy_mode="auto", proxy_url="http://proxy.test",
+                      proxy_config={"enabled": True, "url": "http://proxy.test", "allowAutoRetry": True},
+                      before_request=pace)
+    async def impersonated(url, method, params, data, json, headers, timeout, impersonate, proxy):
+        attempts.append(proxy)
+        if not proxy:
+            raise RateLimited("HTTP 429")
+        return "完整正文", httpx.Response(200, request=httpx.Request("GET", url))
+    monkeypatch.setattr(fetcher, "_fetch_raw_impersonate", impersonated)
+    assert await fetcher.fetch_text("https://example.test/chapter", impersonate="chrome124") == "完整正文"
+    assert attempts == [False, True]
+    assert starts == ["https://example.test/chapter"] * 2

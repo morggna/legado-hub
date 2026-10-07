@@ -1,0 +1,43 @@
+contractVersion: "1.0"
+id: wenku8_net
+name: 轻小说文库
+author: Yunwei
+version: 0.2.2
+type: source
+domains:
+  - wenku8.net
+  - dl1.wenku8.com
+  - img.wenku8.com
+  - pic.777743.xyz
+baseUrls:
+  - https://www.wenku8.net
+capabilities: [search, detail, toc, chapter, full_book]
+enabled: true
+language: zh-CN
+rateLimit:
+  perHostConcurrency: 1
+  minIntervalMs: 5000
+proxy:
+  mode: never
+  required: false
+browser:
+  mode: none
+  reason: ""
+auth:
+  mode: none
+  cookieDomains: []
+content:
+  access: free
+tags: [html, no-login, light-novel, gbk, search_provider]
+accessStrategy:
+  search: search_provider
+  detail: stealth_http
+  toc: stealth_http
+  chapter: stealth_http
+  full_book: stealth_http
+searchProvider:
+  providerOrder: [duckduckgo_ddgs]
+  targetDomain: www.wenku8.net
+  querySitePath: /book/
+  urlPatterns:
+    - /book/\d+\.htm

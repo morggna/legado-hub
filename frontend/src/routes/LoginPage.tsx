@@ -1,3 +1,4 @@
+import { InstallApp } from "@/components/InstallApp"
 import { useEffect, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router"
 import { useQueryClient } from "@tanstack/react-query"
@@ -54,6 +55,7 @@ function AccountLoginPage() {
         <Button type="submit" className="w-full" disabled={busy}>{busy ? "处理中…" : register ? "注册账号" : "登录"}</Button>
       </form>
       <Button className="mt-4 w-full" variant="ghost" disabled={busy} onClick={() => { setRegister(!register); setError("") }}>{register ? "已有账号，返回登录" : "有邀请码？注册账号"}</Button>
+      <div className="mt-2 text-center"><InstallApp /></div>
     </div>
   </div>
 }

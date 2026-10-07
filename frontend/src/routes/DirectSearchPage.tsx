@@ -4,6 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { BookCover } from "@/components/BookCover"
 import { Input } from "@/components/ui/input"
+import { TxtNovelAccount } from "@/components/TxtNovelAccount"
+import { AttachmentBookAction } from "@/components/AttachmentBookAction"
+import { bookDetailUrl } from "@/lib/direct-api"
 import { directRequest, streamSearch, type DirectBook, type DirectSource } from "@/lib/direct-api"
 
 export function DirectSearchPage() {
@@ -68,16 +71,18 @@ export function DirectSearchPage() {
         <input type="checkbox" checked={selected.includes(s.id)} onChange={e => setSelection(e.target.checked ? [...selected, s.id].slice(0, 64) : selected.filter(id => id !== s.id))} />
         <span>{s.name}<span className="block text-xs text-slate-500">{status[s.id] || (busy && selected.includes(s.id) ? "搜索中…" : "")}</span></span>
       </label>)}</div>
+      <TxtNovelAccount />
     </details>
     {(error || add.error) && <p role="alert" className="text-red-600">{error || add.error?.message}</p>}
     <div aria-live="polite" className="text-sm text-slate-500">{books.length} 个结果{busy ? "，正在汇总各书源；搜索完成或停止后可加入书库" : ""}</div>
     <div className="grid gap-3 sm:grid-cols-2">{books.map(b => {
-      const owned = shelf.data?.items.find(item => item.bookId === b.bookId || b.sourceBookIds?.includes(item.bookId))
+      const owned = shelf.data?.items.find(item => item.bookId === b.bookId || b.sourceBookIds?.includes(item.bookId)
+        || (b.attachmentSource && item.imported && item.sourceId === b.sourceId && item.threadId === b.threadId))
       return <div key={b.bookId} className="rounded-lg border bg-white p-4">
-        <div className="flex gap-4"><BookCover name={b.name} url={b.coverUrl} /><div className="min-w-0"><h2 className="font-semibold">{b.name}</h2><p className="mt-1 text-sm text-slate-500">{b.author || "作者未知"}</p><p className="mt-2 text-sm text-slate-500">{b.sourceCount ?? 1} 个来源 · 聚合阅读</p><p className="mt-2 line-clamp-2 text-xs text-slate-400">{b.sources?.map(s => s.sourceName).join("、") || b.sourceName}</p></div></div>
-        <div className="mt-4 flex gap-2"><Button size="sm" disabled={add.isPending || busy} onClick={() => add.mutate({book: b, read: true})}>{owned ? "查看目录" : "加入并查看目录"}</Button>
+        <div className="flex gap-4"><BookCover name={b.name} url={b.coverUrl} /><div className="min-w-0"><h2 className="font-semibold">{b.name}</h2><p className="mt-1 text-sm text-slate-500">{b.author || "作者未知"}</p><p className="mt-2 text-sm text-slate-500">{b.attachmentSource ? "整本附件 · 下载后阅读" : `${b.sourceCount ?? 1} 个来源 · 聚合阅读`}</p><p className="mt-2 line-clamp-2 text-xs text-slate-400">{b.sources?.map(s => s.sourceName).join("、") || b.sourceName}</p></div></div>
+        <div className="mt-4 flex gap-2">{b.attachmentSource ? owned ? <Button size="sm" onClick={() => navigate(bookDetailUrl(owned.bookId))}>查看已导入书籍</Button> : <AttachmentBookAction book={b} busy={busy} /> : <><Button size="sm" disabled={add.isPending || busy} onClick={() => add.mutate({book: b, read: true})}>{owned ? "查看目录" : "加入并查看目录"}</Button>
           {<Button variant="outline" size="sm" disabled={add.isPending || busy} onClick={() => add.mutate({book: b, read: false})}>{owned ? "更新来源" : "加入书库"}</Button>}
-        </div>
+        </>}</div>
       </div>
     })}</div>
     {!busy && books.length > 0 && <Button variant="outline" onClick={() => { void search(page + 1) }}>搜索下一页</Button>}

@@ -1,0 +1,24 @@
+# Optional existing-Legend egress for sources declaring proxy.mode=always.
+# Run alongside compose.yaml. Keep legend-proxy.json outside version control.
+services:
+  legend-proxy:
+    image: ${LEGADOHUB_IMAGE:-local/legadohub-direct:20261007-txtnovel}
+    container_name: legadohub-reader-legend
+    restart: unless-stopped
+    network_mode: service:app
+    depends_on:
+      app:
+        condition: service_started
+    user: '1000:1000'
+    entrypoint: [/usr/local/bin/sing-box, run, -c, /etc/reader-legend.json]
+    volumes:
+      - /etc/sing-box/bin/sing-box:/usr/local/bin/sing-box:ro
+      - ./legend-proxy.json:/etc/reader-legend.json:ro
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'

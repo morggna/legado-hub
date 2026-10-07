@@ -292,6 +292,23 @@ def create_app(
             async def console_spa_catchall(path: str):
                 return _spa_index_response()
 
+        @app.get("/manifest.webmanifest")
+        @app.get("/app-worker")
+        @app.get("/apple-touch-icon.png")
+        async def pwa_asset(request: Request):
+            assets = {
+                "/manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+                "/app-worker": ("sw.js", "application/javascript"),
+                "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+            }
+            filename, media_type = assets[request.url.path]
+            return FileResponse(str(FRONTEND_DIST / filename), media_type=media_type,
+                                headers={"Cache-Control": "no-cache"})
+
+        pwa_icons = FRONTEND_DIST / "app-icons"
+        if pwa_icons.exists():
+            app.mount("/app-icons", StaticFiles(directory=str(pwa_icons)), name="pwa-icons")
+
         @app.get("/favicon.svg")
         async def console_favicon():
             return FileResponse(str(FRONTEND_DIST / "favicon.svg"))

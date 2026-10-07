@@ -23,6 +23,8 @@ env:
 
 jobs:
   build:
+    # The inherited publisher belongs to upstream's Docker Hub account.
+    if: github.repository == 'XziXmn/legado-hub'
     runs-on: ubuntu-latest
 
     steps:

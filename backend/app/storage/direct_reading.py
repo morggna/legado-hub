@@ -41,6 +41,17 @@ class DirectReadingRepository:
         with self.connect() as conn:
             conn.execute("DELETE FROM direct_bookshelf WHERE user_id=? AND book_id=?", (user_id, book_id))
 
+    def save_import(self, user_id, detail, chapter_count):
+        """Publish a personal attachment and its completed job in one transaction."""
+        with self.connect() as conn:
+            conn.execute("""INSERT INTO direct_bookshelf(user_id,book_id,metadata_json) VALUES(?,?,?)
+                ON CONFLICT(user_id,book_id) DO UPDATE SET metadata_json=excluded.metadata_json,updated_at=datetime('now')""",
+                (user_id, detail['bookId'], json.dumps(detail, ensure_ascii=False)))
+            conn.execute("""INSERT INTO direct_download_jobs(user_id,book_id,state,completed,total) VALUES(?,?,'completed',?,?)
+                ON CONFLICT(user_id,book_id) DO UPDATE SET state='completed',completed=excluded.completed,
+                    total=excluded.total,error='',updated_at=datetime('now')""",
+                (user_id, detail['bookId'], chapter_count, chapter_count))
+
     def progress(self, user_id, book_id):
         with self.connect() as conn:
             row = conn.execute("SELECT chapter_index,position,revision FROM direct_progress WHERE user_id=? AND book_id=?", (user_id, book_id)).fetchone()
