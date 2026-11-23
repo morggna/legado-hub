@@ -3,28 +3,31 @@ name: Build and Push Docker Image
 on:
   push:
     branches:
+      - feat/direct-thirdparty-reading
       - main
     tags:
       - "v*"
   pull_request:
     branches:
+      - feat/direct-thirdparty-reading
       - main
   workflow_dispatch:
 
 permissions:
   contents: read
+  packages: write
 
 concurrency:
   group: docker-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  DOCKER_IMAGE: xzixmn/legado-hub
+  REGISTRY: ghcr.io
+  DOCKER_IMAGE: ghcr.io/morggna/legado-hub
 
 jobs:
   build:
-    # The inherited publisher belongs to upstream's Docker Hub account.
-    if: github.repository == 'XziXmn/legado-hub'
+    if: github.repository == 'morggna/legado-hub'
     runs-on: ubuntu-latest
 
     steps:
@@ -38,10 +41,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Tag policy (two channels):
-      #   main  / workflow_dispatch on branch → beta + sha-*   (dev/test only)
-      #   tag v*                             → vX.Y.Z + latest + sha-*  (formal)
-      #   pull_request                       → build only, no push
+      # Tag policy:
+      #   feat/direct-thirdparty-reading (default branch) -> latest + sha-*
+      #   main                                            -> beta + sha-*
+      #   tag v*                                          -> vX.Y.Z + latest + sha-*
+      #   pull_request                                    -> build only, no push
       - name: Generate image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -49,21 +53,22 @@ jobs:
           images: ${{ env.DOCKER_IMAGE }}
           flavor: latest=false
           tags: |
+            type=raw,value=latest,enable=${{ (github.ref == 'refs/heads/feat/direct-thirdparty-reading' || startsWith(github.ref, 'refs/tags/v')) && github.event_name != 'pull_request' }}
             type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=ref,event=tag
             type=sha,prefix=sha-,format=short
           labels: |
-            org.opencontainers.image.title=Legado Hub
-            org.opencontainers.image.description=Local-first Legado reading and source management service
-            org.opencontainers.image.source=https://github.com/XziXmn/legado-hub
+            org.opencontainers.image.title=Legado Hub (Personal Fork)
+            org.opencontainers.image.description=LegadoHub personal reading fork with account login, private shelves, and immersive reader
+            org.opencontainers.image.source=https://github.com/morggna/legado-hub
 
-      - name: Log in to Docker Hub
+      - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          username: xzixmn
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build pull request image
         if: github.event_name == 'pull_request'
